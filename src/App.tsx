@@ -91,13 +91,13 @@ export default function App() {
                   // Mock media database logic
                   let media: MediaItem | null = null;
                   if (query.includes("تكنولوجيا التعليم")) {
-                    media = { type: 'image', url: 'https://picsum.photos/seed/tech/800/450', title: 'معمل تكنولوجيا التعليم' };
+                    media = { type: 'image', url: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQKJ5Oxy1_nWkdZZfMx9ajk9PyFMk_FEZ6iI-ncWOdlgQ&s=10', title: 'معمل تكنولوجيا التعليم' };
                   } else if (query.includes("شؤون الطلاب")) {
                     media = { type: 'image', url: 'https://picsum.photos/seed/students/800/450', title: 'مكتب شؤون الطلاب' };
                   } else if (query.includes("قاعة") || query.includes("قاعات")) {
-                    media = { type: 'video', url: 'https://www.w3schools.com/html/mov_bbb.mp4', title: 'جولة في قاعات الكلية' };
+                    media = { type: 'video', url: 'https://youtu.be/-QNOlKNavBU?si=xTIHdgoPumVUe-TO', title: 'جولة في قاعات الكلية' };
                   } else {
-                    media = { type: 'image', url: 'https://picsum.photos/seed/college/800/450', title: 'مبنى الكلية الرئيسي' };
+                    media = { type: 'image', url: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRNUpO82RF2QEOIKqAgojYw_slsNotGb3EFWzJ9_IpgKw&s=10', title: 'مبنى الكلية الرئيسي' };
                   }
 
                   setMediaContent(media);
