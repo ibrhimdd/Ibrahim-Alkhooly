@@ -88,38 +88,62 @@ const tools = [
             }
 
             // Handle tool calls
-            const toolCalls = message.toolCall?.functionCalls;
-if (call.name === "get_media_content") {
-  const query = (call.args as any).query;
-  console.log("Fetching media for:", query);
+            // --- الجزء المصحح بالكامل داخل onmessage ---
+const toolCalls = message.toolCall?.functionCalls;
 
-  // استدعاء الـ API الحقيقي من استضافتك
-  // استبدل الرابط أدناه برابط ملف media-api.php الخاص بك
-  fetch(`https://a-rashad.gt.tc/media-api.php?q=${encodeURIComponent(query)}`)
-    .then((response) => response.json())
-    .then((data) => {
-      if (data && data.url) {
-        // تحديث الواجهة بالبيانات القادمة من قاعدة البيانات
-        setMediaContent({
-          type: data.type,
-          url: data.url,
-          title: data.title
+if (toolCalls && toolCalls.length > 0) {
+  // الموديل قد يرسل أكثر من طلب أداة في نفس الوقت
+  toolCalls.forEach((call: any) => {
+    if (call.name === "get_media_content") {
+      const query = (call.args as any).query;
+      console.log("جاري جلب الوسائط لـ:", query);
+
+      // الاتصال بملف الـ API على استضافتك
+      fetch(`https://a-rashad.gt.tc/media-api.php?q=${encodeURIComponent(query)}`)
+        .then((response) => response.json())
+        .then((data) => {
+          if (data && data.url) {
+            // تحديث الواجهة بالبيانات القادمة من قاعدة البيانات
+            setMediaContent({
+              type: data.type,
+              url: data.url,
+              title: data.title
+            });
+
+            // إرسال رد النجاح للموديل ليكمل حديثه صوتياً
+            sessionRef.current?.sendToolResponse({
+              functionResponses: [{
+                name: "get_media_content",
+                id: call.id,
+                response: { result: "تم العثور على الصورة وعرضها للمستخدم بنجاح." }
+              }]
+            });
+          } else {
+            // رد في حال عدم وجود نتائج
+            sessionRef.current?.sendToolResponse({
+              functionResponses: [{
+                name: "get_media_content",
+                id: call.id,
+                response: { result: "لم يتم العثور على صور لهذه الكلمة في قاعدة البيانات." }
+              }]
+            });
+          }
+        })
+        .catch((error) => {
+          console.error("خطأ في الاتصال بالـ API:", error);
+          sessionRef.current?.sendToolResponse({
+            functionResponses: [{
+              name: "get_media_content",
+              id: call.id,
+              response: { error: "فشل الاتصال بقاعدة البيانات." }
+            }]
+          });
         });
-      } else {
-        console.log("لم يتم العثور على وسائط لهذه الكلمة.");
-      }
-    })
-    .catch((error) => console.error("خطأ في الاتصال بالـ API:", error));
-
-  // إرسال رد لـ Gemini ليتمكن من إكمال المحادثة صوتياً
-  sessionRef.current?.sendToolResponse({
-    functionResponses: [{
-      name: "get_media_content",
-      id: call.id,
-      response: { result: "تم فحص قاعدة البيانات وعرض الوسائط إن وجدت." }
-    }]
+    }
   });
 }
+// --- نهاية الجزء المصحح ---
+
 
             // Handle model transcription
             const modelParts = message.serverContent?.modelTurn?.parts;
