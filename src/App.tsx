@@ -88,18 +88,19 @@ const tools = [
             }
 
             // Handle tool calls
-// 1. ابحث عن الجزء الخاص بمعالجة الأدوات داخل callbacks
+            // ابحث عن هذا الجزء داخل دالة onmessage
 const toolCalls = message.toolCall?.functionCalls;
 
 if (toolCalls && toolCalls.length > 0) {
   toolCalls.forEach((call: any) => {
     if (call.name === "get_media_content") {
       const query = (call.args as any).query;
-      console.log("جاري البحث عبر البروكسي عن:", query);
+      console.log("جاري جلب الوسائط عبر البروكسي لـ:", query);
 
-      // 2. تعريف الرابط المستهدف ورابط البروكسي
+      // الرابط الأصلي على استضافتك
       const targetUrl = `https://a-rashad.gt.tc/media-api.php?q=${encodeURIComponent(query)}`;
-      // نستخدم AllOrigins لأنه أسرع ولا يتطلب تفعيل يدوي مثل cors-anywhere
+      
+      // استخدام بروكسي AllOrigins لتخطي حماية الاستضافة
       const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
 
       fetch(proxyUrl)
@@ -108,25 +109,25 @@ if (toolCalls && toolCalls.length > 0) {
           return response.json();
         })
         .then((data) => {
-          // AllOrigins يضع النتيجة داخل حقل يسمى contents كـ string
+          // AllOrigins يعيد البيانات داخل حقل اسمه contents كـ String
           const realData = JSON.parse(data.contents);
           
           if (realData && realData.url) {
-            console.log("تم استلام البيانات بنجاح:", realData);
+            console.log("تم العثور على البيانات:", realData);
             
-            // 3. تحديث واجهة المستخدم بالصورة
+            // تحديث حالة الواجهة لعرض الصورة
             setMediaContent({
               type: realData.type,
               url: realData.url,
               title: realData.title
             });
 
-            // 4. إرسال الرد للموديل ليؤكد صوتياً
+            // إرسال رد لـ Gemini ليتمكن من الرد صوتياً
             sessionRef.current?.sendToolResponse({
               functionResponses: [{
                 name: "get_media_content",
                 id: call.id,
-                response: { result: "تم العثور على الصورة وعرضها للمستخدم." }
+                response: { result: "تم عرض الوسائط بنجاح للمستخدم." }
               }]
             });
           }
