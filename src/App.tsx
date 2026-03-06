@@ -88,63 +88,57 @@ const tools = [
             }
 
             // Handle tool calls
-            // --- الجزء المصحح بالكامل داخل onmessage ---
+// 1. ابحث عن الجزء الخاص بمعالجة الأدوات داخل callbacks
 const toolCalls = message.toolCall?.functionCalls;
 
 if (toolCalls && toolCalls.length > 0) {
-  // الموديل قد يرسل أكثر من طلب أداة في نفس الوقت
   toolCalls.forEach((call: any) => {
     if (call.name === "get_media_content") {
       const query = (call.args as any).query;
-      console.log("جاري جلب الوسائط لـ:", query);
+      console.log("جاري البحث عبر البروكسي عن:", query);
 
-      // الاتصال بملف الـ API على استضافتك
-      fetch(`https://a-rashad.gt.tc/media-api.php?q=${encodeURIComponent(query)}`)
-        .then((response) => response.json())
+      // 2. تعريف الرابط المستهدف ورابط البروكسي
+      const targetUrl = `https://a-rashad.gt.tc/media-api.php?q=${encodeURIComponent(query)}`;
+      // نستخدم AllOrigins لأنه أسرع ولا يتطلب تفعيل يدوي مثل cors-anywhere
+      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
+
+      fetch(proxyUrl)
+        .then((response) => {
+          if (!response.ok) throw new Error('Network response was not ok');
+          return response.json();
+        })
         .then((data) => {
-          if (data && data.url) {
-            // تحديث الواجهة بالبيانات القادمة من قاعدة البيانات
+          // AllOrigins يضع النتيجة داخل حقل يسمى contents كـ string
+          const realData = JSON.parse(data.contents);
+          
+          if (realData && realData.url) {
+            console.log("تم استلام البيانات بنجاح:", realData);
+            
+            // 3. تحديث واجهة المستخدم بالصورة
             setMediaContent({
-              type: data.type,
-              url: data.url,
-              title: data.title
+              type: realData.type,
+              url: realData.url,
+              title: realData.title
             });
 
-            // إرسال رد النجاح للموديل ليكمل حديثه صوتياً
+            // 4. إرسال الرد للموديل ليؤكد صوتياً
             sessionRef.current?.sendToolResponse({
               functionResponses: [{
                 name: "get_media_content",
                 id: call.id,
-                response: { result: "تم العثور على الصورة وعرضها للمستخدم بنجاح." }
-              }]
-            });
-          } else {
-            // رد في حال عدم وجود نتائج
-            sessionRef.current?.sendToolResponse({
-              functionResponses: [{
-                name: "get_media_content",
-                id: call.id,
-                response: { result: "لم يتم العثور على صور لهذه الكلمة في قاعدة البيانات." }
+                response: { result: "تم العثور على الصورة وعرضها للمستخدم." }
               }]
             });
           }
         })
         .catch((error) => {
-          console.error("خطأ في الاتصال بالـ API:", error);
-          sessionRef.current?.sendToolResponse({
-            functionResponses: [{
-              name: "get_media_content",
-              id: call.id,
-              response: { error: "فشل الاتصال بقاعدة البيانات." }
-            }]
-          });
+          console.error("خطأ في جلب البيانات عبر البروكسي:", error);
         });
     }
   });
 }
-// --- نهاية الجزء المصحح ---
 
-
+            
             // Handle model transcription
             const modelParts = message.serverContent?.modelTurn?.parts;
             if (modelParts) {
