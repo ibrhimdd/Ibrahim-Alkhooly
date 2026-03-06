@@ -99,45 +99,36 @@ if (toolCalls && toolCalls.length > 0) {
 
       // الرابط الأصلي على استضافتك
       const targetUrl = `https://a-rashad.gt.tc/media-api.php?q=${encodeURIComponent(query)}`;
+    // استبدل الجزء الخاص بالـ fetch بهذا الكود
+const targetUrl = `https://a-rashad.gt.tc/media-api.php?q=${encodeURIComponent(query)}`;
+const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
+
+fetch(proxyUrl)
+  .then((response) => {
+    if (!response.ok) throw new Error('Proxy or Server error');
+    return response.json(); // نستخدم json() مباشرة لأن هذا البروكسي لا يغلف البيانات
+  })
+  .then((data) => {
+    if (data && data.url) {
+      console.log("تم جلب البيانات بنجاح:", data);
+      setMediaContent({
+        type: data.type,
+        url: data.url,
+        title: data.title
+      });
       
-      // استخدام بروكسي AllOrigins لتخطي حماية الاستضافة
-      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
-
-      fetch(proxyUrl)
-        .then((response) => {
-          if (!response.ok) throw new Error('Network response was not ok');
-          return response.json();
-        })
-        .then((data) => {
-          // AllOrigins يعيد البيانات داخل حقل اسمه contents كـ String
-          const realData = JSON.parse(data.contents);
-          
-          if (realData && realData.url) {
-            console.log("تم العثور على البيانات:", realData);
-            
-            // تحديث حالة الواجهة لعرض الصورة
-            setMediaContent({
-              type: realData.type,
-              url: realData.url,
-              title: realData.title
-            });
-
-            // إرسال رد لـ Gemini ليتمكن من الرد صوتياً
-            sessionRef.current?.sendToolResponse({
-              functionResponses: [{
-                name: "get_media_content",
-                id: call.id,
-                response: { result: "تم عرض الوسائط بنجاح للمستخدم." }
-              }]
-            });
-          }
-        })
-        .catch((error) => {
-          console.error("خطأ في جلب البيانات عبر البروكسي:", error);
-        });
+      sessionRef.current?.sendToolResponse({
+        functionResponses: [{
+          name: "get_media_content",
+          id: call.id,
+          response: { result: "تم عرض الصورة بنجاح." }
+        }]
+      });
     }
+  })
+  .catch((error) => {
+    console.error("خطأ البروكسي الجديد:", error);
   });
-}
 
             
             // Handle model transcription
