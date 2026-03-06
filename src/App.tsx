@@ -42,6 +42,13 @@ export default function App() {
           });
         }
       });
+      // في ملف App.tsx تأكد من هذا التنسيق
+const tools = [
+  {
+    functionDeclarations: [GET_MEDIA_CONTENT_TOOL],
+  },
+];
+
 
       const sessionPromise = ai.live.connect({
         model: MODEL_NAME,
