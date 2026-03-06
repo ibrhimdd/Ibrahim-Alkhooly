@@ -43,4 +43,4 @@ export const GET_MEDIA_CONTENT_TOOL = {
 };
 
 // تأكد من تمرير هذا الثابت في مصفوفة tools داخل ملف App.tsx
-export const MODEL_NAME = "gemini-2.0-flash-exp"; // أو النسخة التي تستخدمها حالياً
+export const MODEL_NAME = "gemini-2.5-flash-native-audio-preview-09-2025"; // أو النسخة التي تستخدمها حالياً
