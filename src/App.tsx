@@ -82,37 +82,37 @@ export default function App() {
 
             // Handle tool calls
             const toolCalls = message.toolCall?.functionCalls;
-            if (toolCalls) {
-              for (const call of toolCalls) {
-                if (call.name === "get_media_content") {
-                  const query = (call.args as any).query;
-                  console.log("Tool Call: get_media_content for", query);
-                  
-                  // Mock media database logic
-                  let media: MediaItem | null = null;
-                  if (query.includes("تكنولوجيا التعليم")) {
-                    media = { type: 'image', url: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQKJ5Oxy1_nWkdZZfMx9ajk9PyFMk_FEZ6iI-ncWOdlgQ&s=10', title: 'معمل تكنولوجيا التعليم' };
-                  } else if (query.includes("شؤون الطلاب")) {
-                    media = { type: 'image', url: 'https://picsum.photos/seed/students/800/450', title: 'مكتب شؤون الطلاب' };
-                  } else if (query.includes("قاعة") || query.includes("قاعات")) {
-                    media = { type: 'video', url: 'https://rr4---sn-4g5ednrs.googlevideo.com/videoplayback?expire=1772841839&ei=DxeraaqOLuSGy_sP4NnnqQs&ip=192.154.250.165&id=o-ABDMuZkRGSIHU9cPpYdBLHAuPlbEPt_KwKdxkYyPQ4NB&itag=18&source=youtube&requiressl=yes&xpc=EgVo2aDSNQ%3D%3D&rms=au%2Cau&bui=AVNa5-xHuOomc1WVqNCsRngaN2VF_ne7om7-_ck8JrpUYZF0Ey3sM3d8T4mTeaF-qWKSwe00RCQbDtpV&spc=6dlaFEgCtOXNc88TBhvEklQJvMPMpiihAWTAghHr34DN1-A_1oLS6cbgmjNOqhzU3zg&vprv=1&svpuc=1&mime=video%2Fmp4&rqh=1&cnr=14&ratebypass=yes&dur=538.331&lmt=1750225280739889&fexp=51565115,51565682,51791334&c=ANDROID&txp=6218224&sparams=expire%2Cei%2Cip%2Cid%2Citag%2Csource%2Crequiressl%2Cxpc%2Cbui%2Cspc%2Cvprv%2Csvpuc%2Cmime%2Crqh%2Ccnr%2Cratebypass%2Cdur%2Clmt&sig=AHEqNM4wRQIhAPcgIIfFZHRxftCoAYPC9qFuGLuHFiHqGXCVsPjxtflLAiARkKBOgo0poMQdF95al2O4jU1jppY5WstQqzWngpki1Q%3D%3D&rm=sn-5uaeee7z&rrc=104,191,191&req_id=c92ae9446da2a3ee&cps=0&ipbypass=yes&cm2rm=sn-8vq54voxxb-5atk7l,sn-hgnlz7l&redirect_counter=3&cms_redirect=yes&cmsv=e&met=1772820244,&mh=R5&mip=196.135.129.153&mm=34&mn=sn-4g5ednrs&ms=ltu&mt=1772819820&mv=m&mvi=4&pl=23&lsparams=cps,ipbypass,met,mh,mip,mm,mn,ms,mv,mvi,pl,rms&lsig=APaTxxMwRgIhALGS5-0FIW8dfVB8GKuWBfS57K5OAAZLQ4bAV8wXMBuBAiEAw_VtF3Iu9_Wfl7q6EplwkspOVYXNHy_GmzKKngTtu68%3D', title: 'جولة في قاعات الكلية' };
-                  } else {
-                    media = { type: 'image', url: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRNUpO82RF2QEOIKqAgojYw_slsNotGb3EFWzJ9_IpgKw&s=10', title: 'مبنى الكلية الرئيسي' };
-                  }
+if (call.name === "get_media_content") {
+  const query = (call.args as any).query;
+  console.log("Fetching media for:", query);
 
-                  setMediaContent(media);
-                  
-                  // Send response back to model
-                  sessionRef.current?.sendToolResponse({
-                    functionResponses: [{
-                      name: "get_media_content",
-                      id: call.id,
-                      response: { result: "تم عرض الوسائط المطلوبة للمستخدم بنجاح." }
-                    }]
-                  });
-                }
-              }
-            }
+  // استدعاء الـ API الحقيقي من استضافتك
+  // استبدل الرابط أدناه برابط ملف media-api.php الخاص بك
+  fetch(`https://a-rashad.gt.tc/media-api.php?q=${encodeURIComponent(query)}`)
+    .then((response) => response.json())
+    .then((data) => {
+      if (data && data.url) {
+        // تحديث الواجهة بالبيانات القادمة من قاعدة البيانات
+        setMediaContent({
+          type: data.type,
+          url: data.url,
+          title: data.title
+        });
+      } else {
+        console.log("لم يتم العثور على وسائط لهذه الكلمة.");
+      }
+    })
+    .catch((error) => console.error("خطأ في الاتصال بالـ API:", error));
+
+  // إرسال رد لـ Gemini ليتمكن من إكمال المحادثة صوتياً
+  sessionRef.current?.sendToolResponse({
+    functionResponses: [{
+      name: "get_media_content",
+      id: call.id,
+      response: { result: "تم فحص قاعدة البيانات وعرض الوسائط إن وجدت." }
+    }]
+  });
+}
 
             // Handle model transcription
             const modelParts = message.serverContent?.modelTurn?.parts;
