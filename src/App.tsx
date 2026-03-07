@@ -97,7 +97,7 @@ if (toolCalls && toolCalls.length > 0) {
       const query = (call.args as any).query;
 console.log("جاري الجلب عبر Vercel Proxy لـ:", query);
 
-// الاتصال بالدالة التي أنشأناها في مجلد /api/
+// داخل handleToolCall في ملف App.tsx
 fetch(`/api/proxy?q=${encodeURIComponent(query)}`)
   .then((response) => response.json())
   .then((data) => {
@@ -107,19 +107,18 @@ fetch(`/api/proxy?q=${encodeURIComponent(query)}`)
         url: data.url,
         title: data.title
       });
-
+      // إرسال الرد لـ Gemini ليؤكد العملية صوتياً
       sessionRef.current?.sendToolResponse({
         functionResponses: [{
           name: "get_media_content",
           id: call.id,
-          response: { result: "Success" }
+          response: { result: "تم عرض الصورة بنجاح." }
         }]
       });
     }
   })
-  .catch((error) => {
-    console.error("Vercel Proxy Error:", error);
-  });
+  .catch((error) => console.error("Proxy Error:", error));
+
 
 
             
