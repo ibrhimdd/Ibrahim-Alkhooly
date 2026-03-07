@@ -146,7 +146,7 @@ fetch(`/api/proxy?q=${encodeURIComponent(query)}`)
                 return [...prev.slice(-10), { role: 'user', text: userText }];
               });
             }
-          },
+          }
           onerror: (error) => {
             console.error("Live API Error:", error);
             setStatus('error');
