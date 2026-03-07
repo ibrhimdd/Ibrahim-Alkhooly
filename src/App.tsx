@@ -95,40 +95,32 @@ if (toolCalls && toolCalls.length > 0) {
   toolCalls.forEach((call: any) => {
     if (call.name === "get_media_content") {
       const query = (call.args as any).query;
-      console.log("جاري جلب الوسائط عبر البروكسي لـ:", query);
+console.log("جاري الجلب عبر Vercel Proxy لـ:", query);
 
-      // الرابط الأصلي على استضافتك
-      const targetUrl = `https://a-rashad.gt.tc/media-api.php?q=${encodeURIComponent(query)}`;
-    // استبدل الجزء الخاص بالـ fetch بهذا الكود
-const targetUrl = `https://a-rashad.gt.tc/media-api.php?q=${encodeURIComponent(query)}`;
-const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
-
-fetch(proxyUrl)
-  .then((response) => {
-    if (!response.ok) throw new Error('Proxy or Server error');
-    return response.json(); // نستخدم json() مباشرة لأن هذا البروكسي لا يغلف البيانات
-  })
+// الاتصال بالدالة التي أنشأناها في مجلد /api/
+fetch(`/api/proxy?q=${encodeURIComponent(query)}`)
+  .then((response) => response.json())
   .then((data) => {
     if (data && data.url) {
-      console.log("تم جلب البيانات بنجاح:", data);
       setMediaContent({
         type: data.type,
         url: data.url,
         title: data.title
       });
-      
+
       sessionRef.current?.sendToolResponse({
         functionResponses: [{
           name: "get_media_content",
           id: call.id,
-          response: { result: "تم عرض الصورة بنجاح." }
+          response: { result: "Success" }
         }]
       });
     }
   })
   .catch((error) => {
-    console.error("خطأ البروكسي الجديد:", error);
+    console.error("Vercel Proxy Error:", error);
   });
+
 
             
             // Handle model transcription
