@@ -1,0 +1,65 @@
+{
+  "entities": {
+    "Media": {
+      "title": "Media Content",
+      "description": "Images and videos for the assistant to display.",
+      "type": "object",
+      "properties": {
+        "queryKey": {
+          "type": "string",
+          "description": "The keyword or phrase to match (e.g., 'تكنولوجيا التعليم')."
+        },
+        "type": {
+          "type": "string",
+          "enum": ["image", "video"],
+          "description": "The type of media (image or video)."
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "description": "The URL of the media file."
+        },
+        "title": {
+          "type": "string",
+          "description": "A descriptive title for the media."
+        },
+        "description": {
+          "type": "string",
+          "description": "Optional detailed description."
+        }
+      },
+      "required": ["queryKey", "type", "url", "title"]
+    },
+    "CollegeInfo": {
+      "title": "College Information",
+      "description": "Structured information about the college.",
+      "type": "object",
+      "properties": {
+        "category": {
+          "type": "string",
+          "description": "The category (e.g., 'أقسام', 'شؤون طلاب')."
+        },
+        "content": {
+          "type": "string",
+          "description": "The detailed text content."
+        },
+        "lastUpdated": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When this info was last updated."
+        }
+      },
+      "required": ["category", "content"]
+    }
+  },
+  "firestore": {
+    "/media/{mediaId}": {
+      "schema": "Media",
+      "description": "Collection of media assets for the assistant."
+    },
+    "/college_info/{infoId}": {
+      "schema": "CollegeInfo",
+      "description": "Collection of structured college information."
+    }
+  }
+}

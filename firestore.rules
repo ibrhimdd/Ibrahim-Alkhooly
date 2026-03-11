@@ -1,0 +1,65 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: media
+    // Fields:
+    //   - queryKey: string (required) - Keyword to match
+    //   - type: string (required) - 'image' or 'video'
+    //   - url: string (required) - URL of the media
+    //   - title: string (required) - Title of the media
+    //   - description: string (optional)
+    //
+    // Collection: college_info
+    // Fields:
+    //   - category: string (required)
+    //   - content: string (required)
+    //   - lastUpdated: timestamp (optional)
+    //
+    // ===============================================================
+
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (request.auth.token.email.lower() == "ibrahimalkhooly@gmail.com" && request.auth.token.email_verified == true);
+    }
+
+    function isValidMedia(data) {
+      return data.keys().hasOnly(['queryKey', 'type', 'url', 'title', 'description', 'createdAt']) &&
+             data.queryKey is string && data.queryKey.size() > 0 && data.queryKey.size() < 100 &&
+             data.type in ['image', 'video'] &&
+             data.url is string && data.url.matches("^https?://.*") &&
+             data.title is string && data.title.size() > 0 && data.title.size() < 200 &&
+             (!('description' in data) || (data.description is string && data.description.size() < 1000)) &&
+             (!('createdAt' in data) || data.createdAt is timestamp);
+    }
+
+    function isValidInfo(data) {
+      return data.keys().hasOnly(['category', 'content', 'lastUpdated']) &&
+             data.category is string && data.category.size() > 0 && data.category.size() < 100 &&
+             data.content is string && data.content.size() > 0 && data.content.size() < 10000 &&
+             (!('lastUpdated' in data) || data.lastUpdated is timestamp);
+    }
+
+    // Rules
+    match /media/{mediaId} {
+      allow read: if true; // Publicly readable for the assistant
+      allow create, update: if isAdmin() && isValidMedia(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /college_info/{infoId} {
+      allow read: if true;
+      allow create, update: if isAdmin() && isValidInfo(request.resource.data);
+      allow delete: if isAdmin();
+    }
+  }
+}

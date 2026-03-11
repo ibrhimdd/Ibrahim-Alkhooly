@@ -3,12 +3,23 @@ import { GoogleGenAI, Modality, LiveServerMessage } from "@google/genai";
 import { Mic, MicOff, MessageSquare, Info, Phone, MapPin, GraduationCap, BookOpen, Globe } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AudioHandler } from './utils/audio';
-import { SYSTEM_INSTRUCTION, MODEL_NAME, GET_MEDIA_CONTENT_TOOL } from './constants';
+import { SYSTEM_INSTRUCTION, MODEL_NAME, GET_MEDIA_CONTENT_TOOL, GET_COLLEGE_INFO_TOOL } from './constants';
+import { getMediaByQuery, addMedia, addCollegeInfo, auth, getCollegeInfoByCategory, getAllMedia, getAllCollegeInfo, updateMedia, deleteMedia, updateCollegeInfo, deleteCollegeInfo } from './firebase';
+import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 
 interface MediaItem {
   type: 'image' | 'video';
   url: string;
   title: string;
+}
+
+declare global {
+  interface Window {
+    aistudio: {
+      hasSelectedApiKey: () => Promise<boolean>;
+      openSelectKey: () => Promise<void>;
+    };
+  }
 }
 
 export default function App() {
@@ -18,6 +29,17 @@ export default function App() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [mediaContent, setMediaContent] = useState<MediaItem | null>(null);
+  const [showAdmin, setShowAdmin] = useState(false);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
+  const [adminTab, setAdminTab] = useState<'media' | 'info'>('media');
+  const [refreshKey, setRefreshKey] = useState(0);
+  
+  const [editingMedia, setEditingMedia] = useState<any>(null);
+  const [editingInfo, setEditingInfo] = useState<any>(null);
+  
+  const [isSearching, setIsSearching] = useState(false);
   
   const audioHandlerRef = useRef<AudioHandler | null>(null);
   const sessionRef = useRef<any>(null);
@@ -33,8 +55,9 @@ export default function App() {
     try {
       setErrorMessage(null);
       setStatus('connecting');
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      
+      console.log("Starting session...");
+
+      // Initialize AudioHandler
       audioHandlerRef.current = new AudioHandler((base64Data) => {
         if (sessionRef.current) {
           sessionRef.current.sendRealtimeInput({
@@ -42,7 +65,19 @@ export default function App() {
           });
         }
       });
+      
+      console.log("Requesting microphone access...");
+      await audioHandlerRef.current.startCapture();
+      console.log("Microphone access granted.");
 
+      const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
+      if (!apiKey) {
+        throw new Error("API Key is missing. Please check your environment settings.");
+      }
+
+      const ai = new GoogleGenAI({ apiKey });
+      console.log("Connecting to Live API with model:", MODEL_NAME);
+      
       const sessionPromise = ai.live.connect({
         model: MODEL_NAME,
         config: {
@@ -53,13 +88,13 @@ export default function App() {
           systemInstruction: SYSTEM_INSTRUCTION,
           inputAudioTranscription: {},
           outputAudioTranscription: {},
-          tools: [{ urlContext: {} }, { functionDeclarations: [GET_MEDIA_CONTENT_TOOL] }] as any,
+          tools: [{ googleSearch: {} }, { functionDeclarations: [GET_MEDIA_CONTENT_TOOL, GET_COLLEGE_INFO_TOOL] }] as any,
         },
         callbacks: {
           onopen: () => {
+            console.log("Live API connection opened.");
             setStatus('active');
             setIsActive(true);
-            audioHandlerRef.current?.startCapture();
           },
           onmessage: async (message: LiveServerMessage) => {
             // Handle audio output
@@ -83,32 +118,52 @@ export default function App() {
             // Handle tool calls
             const toolCalls = message.toolCall?.functionCalls;
             if (toolCalls) {
+              setIsSearching(true);
               for (const call of toolCalls) {
                 if (call.name === "get_media_content") {
-                  const query = (call.args as any).query;
-                  console.log("Tool Call: get_media_content for", query);
+                  const queryStr = (call.args as any).query;
+                  console.log("Tool Call: get_media_content for", queryStr);
                   
-                  // Mock media database logic
-                  let media: MediaItem | null = null;
-                  if (query.includes("تكنولوجيا التعليم")) {
-                    media = { type: 'image', url: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQKJ5Oxy1_nWkdZZfMx9ajk9PyFMk_FEZ6iI-ncWOdlgQ&s=10', title: 'معمل تكنولوجيا التعليم' };
-                  } else if (query.includes("شؤون الطلاب")) {
-                    media = { type: 'image', url: 'https://picsum.photos/seed/students/800/450', title: 'مكتب شؤون الطلاب' };
-                  } else if (query.includes("قاعة") || query.includes("قاعات")) {
-                    media = { type: 'video', url: 'https://rr4---sn-4g5ednrs.googlevideo.com/videoplayback?expire=1772841839&ei=DxeraaqOLuSGy_sP4NnnqQs&ip=192.154.250.165&id=o-ABDMuZkRGSIHU9cPpYdBLHAuPlbEPt_KwKdxkYyPQ4NB&itag=18&source=youtube&requiressl=yes&xpc=EgVo2aDSNQ%3D%3D&rms=au%2Cau&bui=AVNa5-xHuOomc1WVqNCsRngaN2VF_ne7om7-_ck8JrpUYZF0Ey3sM3d8T4mTeaF-qWKSwe00RCQbDtpV&spc=6dlaFEgCtOXNc88TBhvEklQJvMPMpiihAWTAghHr34DN1-A_1oLS6cbgmjNOqhzU3zg&vprv=1&svpuc=1&mime=video%2Fmp4&rqh=1&cnr=14&ratebypass=yes&dur=538.331&lmt=1750225280739889&fexp=51565115,51565682,51791334&c=ANDROID&txp=6218224&sparams=expire%2Cei%2Cip%2Cid%2Citag%2Csource%2Crequiressl%2Cxpc%2Cbui%2Cspc%2Cvprv%2Csvpuc%2Cmime%2Crqh%2Ccnr%2Cratebypass%2Cdur%2Clmt&sig=AHEqNM4wRQIhAPcgIIfFZHRxftCoAYPC9qFuGLuHFiHqGXCVsPjxtflLAiARkKBOgo0poMQdF95al2O4jU1jppY5WstQqzWngpki1Q%3D%3D&rm=sn-5uaeee7z&rrc=104,191,191&req_id=c92ae9446da2a3ee&cps=0&ipbypass=yes&cm2rm=sn-8vq54voxxb-5atk7l,sn-hgnlz7l&redirect_counter=3&cms_redirect=yes&cmsv=e&met=1772820244,&mh=R5&mip=196.135.129.153&mm=34&mn=sn-4g5ednrs&ms=ltu&mt=1772819820&mv=m&mvi=4&pl=23&lsparams=cps,ipbypass,met,mh,mip,mm,mn,ms,mv,mvi,pl,rms&lsig=APaTxxMwRgIhALGS5-0FIW8dfVB8GKuWBfS57K5OAAZLQ4bAV8wXMBuBAiEAw_VtF3Iu9_Wfl7q6EplwkspOVYXNHy_GmzKKngTtu68%3D', title: 'جولة في قاعات الكلية' };
-                  } else {
-                    media = { type: 'image', url: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRNUpO82RF2QEOIKqAgojYw_slsNotGb3EFWzJ9_IpgKw&s=10', title: 'مبنى الكلية الرئيسي' };
-                  }
+                  // Fetch from Firestore
+                  getMediaByQuery(queryStr).then((data) => {
+                    let resultMsg = "لم يتم العثور على وسائط لهذا البحث في قاعدة البيانات.";
+                    if (data) {
+                      setMediaContent({
+                        type: data.type as 'image' | 'video',
+                        url: data.url,
+                        title: data.title
+                      });
+                      resultMsg = `تم العثور على ${data.type === 'image' ? 'صورة' : 'فيديو'} بعنوان "${data.title}" وعرضه للمستخدم بنجاح.`;
+                    }
+                    
+                    // Send response back to model
+                    sessionRef.current?.sendToolResponse({
+                      functionResponses: [{
+                        name: "get_media_content",
+                        id: call.id,
+                        response: { result: resultMsg }
+                      }]
+                    });
+                    setIsSearching(false);
+                  });
+                } else if (call.name === "get_college_info") {
+                  const category = (call.args as any).category;
+                  console.log("Tool Call: get_college_info for", category);
 
-                  setMediaContent(media);
-                  
-                  // Send response back to model
-                  sessionRef.current?.sendToolResponse({
-                    functionResponses: [{
-                      name: "get_media_content",
-                      id: call.id,
-                      response: { result: "تم عرض الوسائط المطلوبة للمستخدم بنجاح." }
-                    }]
+                  getCollegeInfoByCategory(category).then((data) => {
+                    let resultMsg = "لم يتم العثور على معلومات نصية لهذه الفئة في قاعدة البيانات.";
+                    if (data) {
+                      resultMsg = `المعلومات الأكيدة من قاعدة البيانات لـ ${category} هي: ${data.content}`;
+                    }
+
+                    sessionRef.current?.sendToolResponse({
+                      functionResponses: [{
+                        name: "get_college_info",
+                        id: call.id,
+                        response: { result: resultMsg }
+                      }]
+                    });
+                    setIsSearching(false);
                   });
                 }
               }
@@ -139,10 +194,18 @@ export default function App() {
               });
             }
           },
-          onerror: (error) => {
+          onerror: (error: any) => {
             console.error("Live API Error:", error);
             setStatus('error');
-            setErrorMessage("حدث خطأ في الاتصال. يرجى المحاولة مرة أخرى.");
+            
+            if (error?.message?.includes('Network error') || error?.message?.includes('Requested entity was not found')) {
+              setErrorMessage("حدث خطأ في الشبكة أو المفتاح البرمجي. يرجى إعادة اختيار المفتاح البرمجي والتأكد من اتصالك.");
+              if (window.aistudio) {
+                window.aistudio.openSelectKey();
+              }
+            } else {
+              setErrorMessage("حدث خطأ في الاتصال. يرجى المحاولة مرة أخرى.");
+            }
             stopSession();
           },
           onclose: () => {
@@ -153,10 +216,15 @@ export default function App() {
       });
 
       sessionRef.current = await sessionPromise;
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to start session:", error);
       setStatus('error');
-      setErrorMessage("تعذر بدء الجلسة. تأكد من إعدادات الميكروفون والمفتاح البرمجي.");
+      if (error?.name === 'NotAllowedError' || error?.message?.includes('Permission denied')) {
+        setErrorMessage("يرجى السماح بالوصول إلى الميكروفون من إعدادات المتصفح للمتابعة.");
+      } else {
+        setErrorMessage("تعذر بدء الجلسة. تأكد من إعدادات الميكروفون والمفتاح البرمجي.");
+      }
+      stopSession();
     }
   };
 
@@ -169,11 +237,11 @@ export default function App() {
     setIsSpeaking(false);
   };
 
-  const toggleSession = () => {
+  const toggleSession = async () => {
     if (isActive) {
       stopSession();
     } else {
-      startSession();
+      await startSession();
     }
   };
 
@@ -192,6 +260,34 @@ export default function App() {
           }
         }, 2000);
       });
+    }
+  };
+
+  const handleAdminAuth = () => {
+    setShowPasswordModal(true);
+  };
+
+  const verifyPassword = () => {
+    if (passwordInput === "509077") {
+      setShowPasswordModal(false);
+      setPasswordInput('');
+      // Also ensure user is logged in for Firebase rules (isAdmin check)
+      if (!auth.currentUser) {
+        const provider = new GoogleAuthProvider();
+        signInWithPopup(auth, provider).then(() => {
+          setIsAdminAuthenticated(true);
+          setShowAdmin(true);
+        }).catch(err => {
+          console.error("Auth failed:", err);
+          alert("يجب تسجيل الدخول بحساب المسؤول أولاً.");
+        });
+      } else {
+        setIsAdminAuthenticated(true);
+        setShowAdmin(true);
+      }
+    } else {
+      alert("كلمة السر خاطئة!");
+      setPasswordInput('');
     }
   };
 
@@ -216,6 +312,12 @@ export default function App() {
             </div>
           </div>
           <div className="flex items-center gap-4">
+            <button 
+              onClick={handleAdminAuth}
+              className="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-xs font-medium text-white/60 transition-all"
+            >
+              تحديث المساعد
+            </button>
             <button className="p-2 hover:bg-white/5 rounded-full transition-colors">
               <Globe size={20} className="text-white/60" />
             </button>
@@ -224,6 +326,26 @@ export default function App() {
 
         {/* Hero / Visualizer Section */}
         <div className={`${isActive && transcript.length > 0 ? 'h-32' : 'flex-1'} flex flex-col items-center justify-center text-center transition-all duration-500`}>
+          {/* Status & Search Indicator */}
+          <div className="w-full max-w-xs flex items-center justify-between mb-6 px-4">
+            <div className="flex items-center gap-2">
+              <div className={`w-1.5 h-1.5 rounded-full ${status === 'active' ? 'bg-emerald-500 animate-pulse' : 'bg-white/20'}`} />
+              <span className="text-[9px] uppercase tracking-widest font-bold text-white/30">
+                {status === 'active' ? 'متصل' : 'غير متصل'}
+              </span>
+            </div>
+            {isSearching && (
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="flex items-center gap-2 px-3 py-1 bg-orange-500/10 border border-orange-500/20 rounded-full"
+              >
+                <div className="w-2 h-2 border border-orange-500 border-t-transparent rounded-full animate-spin" />
+                <span className="text-[9px] text-orange-500 font-bold uppercase tracking-widest">جاري البحث في قاعدة البيانات...</span>
+              </motion.div>
+            )}
+          </div>
+
           <AnimatePresence mode="wait">
             {!isActive ? (
               <motion.div
@@ -421,12 +543,146 @@ export default function App() {
         </div>
       </main>
 
-      {/* Footer Info */}
-      <footer className="absolute bottom-6 left-0 right-0 text-center pointer-events-none">
-        <p className="text-[10px] text-white/20 uppercase tracking-[0.3em]">
-          Powered by Gemini 2.5 Live API • Kafrelsheikh University
-        </p>
-      </footer>
+      {/* Password Modal */}
+      <AnimatePresence>
+        {showPasswordModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[110] flex items-center justify-center p-6 bg-black/90 backdrop-blur-xl"
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              className="bg-[#151619] border border-white/10 p-8 rounded-3xl shadow-2xl w-full max-w-sm text-center space-y-6"
+            >
+              <div className="w-16 h-16 bg-orange-600/20 rounded-2xl flex items-center justify-center mx-auto">
+                <Info className="text-orange-500" size={32} />
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-xl font-semibold">منطقة المسؤولين</h3>
+                <p className="text-sm text-white/40">من فضلك أدخل كلمة السر للمتابعة</p>
+              </div>
+              <input 
+                type="password"
+                autoFocus
+                value={passwordInput}
+                onChange={(e) => setPasswordInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && verifyPassword()}
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-center text-lg tracking-[0.5em] focus:border-orange-600 outline-none transition-colors"
+              />
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setShowPasswordModal(false)}
+                  className="flex-1 py-3 bg-white/5 hover:bg-white/10 rounded-xl text-sm font-medium transition-colors"
+                >
+                  إلغاء
+                </button>
+                <button 
+                  onClick={verifyPassword}
+                  className="flex-1 py-3 bg-orange-600 hover:bg-orange-700 rounded-xl text-sm font-medium transition-colors"
+                >
+                  دخول
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Admin Panel Modal */}
+      <AnimatePresence>
+        {showAdmin && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md"
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              className="bg-[#151619] border border-white/10 w-full max-w-2xl rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]"
+            >
+              <div className="p-6 border-bottom border-white/5 flex justify-between items-center bg-white/5">
+                <h3 className="text-xl font-semibold">تحديث بيانات المساعد</h3>
+                <button 
+                  onClick={() => setShowAdmin(false)}
+                  className="p-2 hover:bg-white/10 rounded-full transition-colors"
+                >
+                  <MicOff size={20} />
+                </button>
+              </div>
+
+              <div className="flex border-b border-white/5">
+                <button 
+                  onClick={() => setAdminTab('media')}
+                  className={`flex-1 py-4 text-sm font-medium transition-colors ${adminTab === 'media' ? 'bg-orange-600/20 text-orange-500 border-b-2 border-orange-600' : 'text-white/40 hover:text-white/60'}`}
+                >
+                  الوسائط
+                </button>
+                <button 
+                  onClick={() => setAdminTab('info')}
+                  className={`flex-1 py-4 text-sm font-medium transition-colors ${adminTab === 'info' ? 'bg-orange-600/20 text-orange-500 border-b-2 border-orange-600' : 'text-white/40 hover:text-white/60'}`}
+                >
+                  المعلومات
+                </button>
+              </div>
+
+              <div className="p-8 overflow-y-auto custom-scrollbar flex-1">
+                {adminTab === 'media' ? (
+                  <div className="space-y-12">
+                    <section>
+                      <h4 className="text-sm font-bold text-white/20 uppercase tracking-widest mb-6">
+                        {editingMedia ? "تعديل الوسائط" : "إضافة وسائط جديدة"}
+                      </h4>
+                      <MediaForm 
+                        editingItem={editingMedia} 
+                        onCancel={() => setEditingMedia(null)}
+                        onComplete={() => {
+                          setRefreshKey(prev => prev + 1);
+                          setEditingMedia(null);
+                        }} 
+                      />
+                    </section>
+                    <section>
+                      <div className="flex justify-between items-center mb-6">
+                        <h4 className="text-sm font-bold text-white/20 uppercase tracking-widest">قائمة الوسائط الحالية</h4>
+                        <button onClick={() => setRefreshKey(prev => prev + 1)} className="text-[10px] text-orange-500 hover:underline">تحديث القائمة</button>
+                      </div>
+                      <MediaList refreshKey={refreshKey} onEdit={setEditingMedia} />
+                    </section>
+                  </div>
+                ) : (
+                  <div className="space-y-12">
+                    <section>
+                      <h4 className="text-sm font-bold text-white/20 uppercase tracking-widest mb-6">
+                        {editingInfo ? "تعديل المعلومات" : "إضافة معلومات جديدة"}
+                      </h4>
+                      <InfoForm 
+                        editingItem={editingInfo}
+                        onCancel={() => setEditingInfo(null)}
+                        onComplete={() => {
+                          setRefreshKey(prev => prev + 1);
+                          setEditingInfo(null);
+                        }} 
+                      />
+                    </section>
+                    <section>
+                      <div className="flex justify-between items-center mb-6">
+                        <h4 className="text-sm font-bold text-white/20 uppercase tracking-widest">قائمة المعلومات الحالية</h4>
+                        <button onClick={() => setRefreshKey(prev => prev + 1)} className="text-[10px] text-orange-500 hover:underline">تحديث القائمة</button>
+                      </div>
+                      <InfoList refreshKey={refreshKey} onEdit={setEditingInfo} />
+                    </section>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -435,10 +691,322 @@ function QuickAction({ icon, label, onClick }: { icon: React.ReactNode, label: s
   return (
     <button 
       onClick={onClick}
-      className="flex items-center justify-center gap-2 px-4 py-3 bg-white/5 hover:bg-white/10 border border-white/5 rounded-2xl transition-all group active:scale-95"
+      className="flex flex-col items-center gap-2 p-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl transition-all group"
     >
-      <span className="text-orange-500 group-hover:scale-110 transition-transform">{icon}</span>
-      <span className="text-xs font-medium text-white/60 group-hover:text-white transition-colors">{label}</span>
+      <div className="text-orange-500 group-hover:scale-110 transition-transform">{icon}</div>
+      <span className="text-[10px] font-bold uppercase tracking-widest text-white/40 group-hover:text-white/80 transition-colors">{label}</span>
     </button>
   );
 }
+
+function MediaList({ refreshKey, onEdit }: { refreshKey: number, onEdit: (item: any) => void }) {
+  const [items, setItems] = useState<any[]>([]);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    getAllMedia().then(setItems);
+  }, [refreshKey]);
+
+  const handleDelete = async (id: string) => {
+    setDeletingId(id);
+    try {
+      await deleteMedia(id);
+      setItems(items.filter(i => i.id !== id));
+    } catch (error) {
+      console.error(error);
+      alert("فشل الحذف. تأكد من الصلاحيات.");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {items.map(item => (
+        <div key={item.id} className="p-4 bg-white/5 border border-white/10 rounded-2xl flex justify-between items-center gap-4">
+          <div className="flex items-center gap-4 overflow-hidden">
+            <div className="w-12 h-12 rounded-lg bg-white/10 flex-shrink-0 flex items-center justify-center overflow-hidden">
+              {item.type === 'image' ? <img src={item.url} className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : <div className="text-[10px]">VIDEO</div>}
+            </div>
+            <div className="overflow-hidden">
+              <p className="text-sm font-medium truncate">{item.title}</p>
+              <p className="text-[10px] text-white/40 truncate">{item.queryKey}</p>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button 
+              onClick={() => onEdit(item)}
+              className="p-2 hover:bg-white/10 text-white/60 rounded-lg transition-colors text-xs"
+            >
+              تعديل
+            </button>
+            <button 
+              onClick={() => handleDelete(item.id)}
+              disabled={deletingId === item.id}
+              className="p-2 hover:bg-red-500/20 text-red-500 rounded-lg transition-colors text-xs disabled:opacity-50"
+            >
+              {deletingId === item.id ? "..." : "حذف"}
+            </button>
+          </div>
+        </div>
+      ))}
+      {items.length === 0 && <p className="text-center text-white/20 py-8 italic">لا توجد وسائط مضافة بعد.</p>}
+    </div>
+  );
+}
+
+function InfoList({ refreshKey, onEdit }: { refreshKey: number, onEdit: (item: any) => void }) {
+  const [items, setItems] = useState<any[]>([]);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    getAllCollegeInfo().then(setItems);
+  }, [refreshKey]);
+
+  const handleDelete = async (id: string) => {
+    setDeletingId(id);
+    try {
+      await deleteCollegeInfo(id);
+      setItems(items.filter(i => i.id !== id));
+    } catch (error) {
+      console.error(error);
+      alert("فشل الحذف.");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {items.map(item => (
+        <div key={item.id} className="p-4 bg-white/5 border border-white/10 rounded-2xl space-y-3">
+          <div className="flex justify-between items-start gap-4">
+            <h5 className="text-orange-500 font-bold text-sm">{item.category}</h5>
+            <div className="flex gap-3">
+              <button 
+                onClick={() => onEdit(item)}
+                className="text-[10px] text-white/40 hover:text-white hover:underline"
+              >
+                تعديل
+              </button>
+              <button 
+                onClick={() => handleDelete(item.id)}
+                disabled={deletingId === item.id}
+                className="text-[10px] text-red-500 hover:underline disabled:opacity-50"
+              >
+                {deletingId === item.id ? "جاري الحذف..." : "حذف"}
+              </button>
+            </div>
+          </div>
+          <p className="text-xs text-white/60 leading-relaxed line-clamp-3">{item.content}</p>
+        </div>
+      ))}
+      {items.length === 0 && <p className="text-center text-white/20 py-8 italic">لا توجد معلومات مضافة بعد.</p>}
+    </div>
+  );
+}
+
+function MediaForm({ onComplete, editingItem, onCancel }: { onComplete: () => void, editingItem?: any, onCancel?: () => void }) {
+  const [loading, setLoading] = useState(false);
+  const [formData, setFormData] = useState({
+    queryKey: '',
+    type: 'image' as 'image' | 'video',
+    url: '',
+    title: '',
+    description: ''
+  });
+
+  useEffect(() => {
+    if (editingItem) {
+      setFormData({
+        queryKey: editingItem.queryKey || '',
+        type: editingItem.type || 'image',
+        url: editingItem.url || '',
+        title: editingItem.title || '',
+        description: editingItem.description || ''
+      });
+    } else {
+      setFormData({
+        queryKey: '',
+        type: 'image',
+        url: '',
+        title: '',
+        description: ''
+      });
+    }
+  }, [editingItem]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      if (editingItem) {
+        await updateMedia(editingItem.id, formData);
+        alert("تم تحديث البيانات بنجاح!");
+      } else {
+        await addMedia(formData);
+        alert("تمت إضافة الوسائط بنجاح!");
+      }
+      onComplete();
+    } catch (error) {
+      console.error(error);
+      alert("فشل في حفظ البيانات.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="space-y-2">
+        <label className="text-xs text-white/40 uppercase tracking-wider">الكلمة المفتاحية (Query Key)</label>
+        <input 
+          required
+          value={formData.queryKey}
+          onChange={e => setFormData({...formData, queryKey: e.target.value})}
+          placeholder="مثلاً: تكنولوجيا التعليم"
+          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-orange-600 outline-none transition-colors"
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <label className="text-xs text-white/40 uppercase tracking-wider">النوع</label>
+          <select 
+            value={formData.type}
+            onChange={e => setFormData({...formData, type: e.target.value as 'image' | 'video'})}
+            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-orange-600 outline-none transition-colors"
+          >
+            <option value="image">صورة</option>
+            <option value="video">فيديو</option>
+          </select>
+        </div>
+        <div className="space-y-2">
+          <label className="text-xs text-white/40 uppercase tracking-wider">العنوان</label>
+          <input 
+            required
+            value={formData.title}
+            onChange={e => setFormData({...formData, title: e.target.value})}
+            placeholder="عنوان توضيحي"
+            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-orange-600 outline-none transition-colors"
+          />
+        </div>
+      </div>
+      <div className="space-y-2">
+        <label className="text-xs text-white/40 uppercase tracking-wider">رابط الوسائط (URL)</label>
+        <input 
+          required
+          type="url"
+          value={formData.url}
+          onChange={e => setFormData({...formData, url: e.target.value})}
+          placeholder="https://..."
+          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-orange-600 outline-none transition-colors"
+        />
+      </div>
+      <div className="flex gap-3">
+        {editingItem && (
+          <button 
+            type="button"
+            onClick={onCancel}
+            className="flex-1 py-4 bg-white/5 hover:bg-white/10 text-white font-semibold rounded-xl transition-all"
+          >
+            إلغاء التعديل
+          </button>
+        )}
+        <button 
+          type="submit"
+          disabled={loading}
+          className="flex-[2] py-4 bg-orange-600 hover:bg-orange-700 text-white font-semibold rounded-xl transition-all shadow-lg shadow-orange-600/20 disabled:opacity-50"
+        >
+          {loading ? "جاري الحفظ..." : (editingItem ? "تحديث البيانات" : "حفظ البيانات")}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function InfoForm({ onComplete, editingItem, onCancel }: { onComplete: () => void, editingItem?: any, onCancel?: () => void }) {
+  const [loading, setLoading] = useState(false);
+  const [formData, setFormData] = useState({
+    category: '',
+    content: ''
+  });
+
+  useEffect(() => {
+    if (editingItem) {
+      setFormData({
+        category: editingItem.category || '',
+        content: editingItem.content || ''
+      });
+    } else {
+      setFormData({
+        category: '',
+        content: ''
+      });
+    }
+  }, [editingItem]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      if (editingItem) {
+        await updateCollegeInfo(editingItem.id, formData);
+        alert("تم تحديث المعلومات بنجاح!");
+      } else {
+        await addCollegeInfo(formData);
+        alert("تمت إضافة المعلومات بنجاح!");
+      }
+      onComplete();
+    } catch (error) {
+      console.error(error);
+      alert("فشل في حفظ البيانات.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="space-y-2">
+        <label className="text-xs text-white/40 uppercase tracking-wider">الفئة (Category)</label>
+        <input 
+          required
+          value={formData.category}
+          onChange={e => setFormData({...formData, category: e.target.value})}
+          placeholder="مثلاً: شؤون الطلاب"
+          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-orange-600 outline-none transition-colors"
+        />
+      </div>
+      <div className="space-y-2">
+        <label className="text-xs text-white/40 uppercase tracking-wider">المحتوى النصي</label>
+        <textarea 
+          required
+          rows={6}
+          value={formData.content}
+          onChange={e => setFormData({...formData, content: e.target.value})}
+          placeholder="اكتب المعلومات هنا..."
+          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-orange-600 outline-none transition-colors resize-none"
+        />
+      </div>
+      <div className="flex gap-3">
+        {editingItem && (
+          <button 
+            type="button"
+            onClick={onCancel}
+            className="flex-1 py-4 bg-white/5 hover:bg-white/10 text-white font-semibold rounded-xl transition-all"
+          >
+            إلغاء التعديل
+          </button>
+        )}
+        <button 
+          type="submit"
+          disabled={loading}
+          className="flex-[2] py-4 bg-orange-600 hover:bg-orange-700 text-white font-semibold rounded-xl transition-all shadow-lg shadow-orange-600/20 disabled:opacity-50"
+        >
+          {loading ? "جاري الحفظ..." : (editingItem ? "تحديث المعلومات" : "حفظ البيانات")}
+        </button>
+      </div>
+    </form>
+  );
+}
+

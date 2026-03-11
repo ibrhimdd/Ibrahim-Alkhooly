@@ -9,6 +9,8 @@ export class AudioHandler {
   private processor: ScriptProcessorNode | null = null;
   private source: MediaStreamAudioSourceNode | null = null;
   
+  private activeSources: AudioBufferSourceNode[] = [];
+  
   // For playback
   private nextStartTime: number = 0;
   private outputSampleRate: number = 24000; // Gemini output sample rate
@@ -20,6 +22,10 @@ export class AudioHandler {
     this.inputContext = new (window.AudioContext || (window as any).webkitAudioContext)({
       sampleRate: this.inputSampleRate,
     });
+
+    if (this.inputContext.state === 'suspended') {
+      await this.inputContext.resume();
+    }
 
     try {
       this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -51,6 +57,7 @@ export class AudioHandler {
     } catch (error) {
       console.error("Error starting audio capture:", error);
       this.stopCapture();
+      throw error;
     }
   }
 
@@ -71,6 +78,10 @@ export class AudioHandler {
         sampleRate: this.outputSampleRate,
       });
       this.nextStartTime = this.outputContext.currentTime;
+    }
+
+    if (this.outputContext.state === 'suspended') {
+      this.outputContext.resume();
     }
 
     const binaryString = atob(base64Data);
@@ -95,9 +106,22 @@ export class AudioHandler {
     const startTime = Math.max(this.outputContext.currentTime, this.nextStartTime);
     source.start(startTime);
     this.nextStartTime = startTime + buffer.duration;
+    
+    this.activeSources.push(source);
+    source.onended = () => {
+      this.activeSources = this.activeSources.filter(s => s !== source);
+    };
   }
 
   clearPlayback() {
+    this.activeSources.forEach(source => {
+      try {
+        source.stop();
+      } catch (e) {
+        // Source might have already stopped
+      }
+    });
+    this.activeSources = [];
     this.nextStartTime = this.outputContext?.currentTime || 0;
   }
 
