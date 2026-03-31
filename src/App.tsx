@@ -116,10 +116,12 @@ export default function App() {
       await audioHandlerRef.current.startCapture();
       console.log("Microphone access granted.");
 
-      const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
-      if (!apiKey) {
-        throw new Error("API Key is missing. Please check your environment settings.");
-      }
+      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+
+if (!apiKey) {
+  throw new Error("مفتاح API غير موجود. تأكد من إضافته في إعدادات Vercel باسم VITE_GEMINI_API_KEY");
+}
+
 
       const ai = new GoogleGenAI({ apiKey });
       console.log("Connecting to Live API with model:", MODEL_NAME);
