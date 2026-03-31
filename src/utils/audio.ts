@@ -19,14 +19,6 @@ export class AudioHandler {
   constructor(private onAudioData: (base64Data: string) => void) {}
 
   async startCapture() {
-    this.inputContext = new (window.AudioContext || (window as any).webkitAudioContext)({
-      sampleRate: this.inputSampleRate,
-    });
-
-    if (this.inputContext.state === 'suspended') {
-      await this.inputContext.resume();
-    }
-
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       const error = new Error("متصفحك لا يدعم الوصول إلى الميكروفون أو أنك في بيئة غير آمنة (HTTP).");
       console.error("Audio capture not supported:", error);
@@ -34,18 +26,29 @@ export class AudioHandler {
     }
 
     try {
-      this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      
-      // Check if we were stopped while waiting for the stream
-      if (!this.inputContext) {
-        this.stream.getTracks().forEach(track => track.stop());
-        return;
+      console.log("Requesting getUserMedia...");
+      this.stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        } 
+      });
+      console.log("getUserMedia success");
+
+      this.inputContext = new (window.AudioContext || (window as any).webkitAudioContext)({
+        sampleRate: this.inputSampleRate,
+      });
+
+      if (this.inputContext.state === 'suspended') {
+        await this.inputContext.resume();
       }
 
       this.source = this.inputContext.createMediaStreamSource(this.stream);
       this.processor = this.inputContext.createScriptProcessor(4096, 1, 1);
       
       this.processor.onaudioprocess = (e) => {
+        if (!this.inputContext) return;
         const inputData = e.inputBuffer.getChannelData(0);
         const pcmData = new Int16Array(inputData.length);
         for (let i = 0; i < inputData.length; i++) {
@@ -61,7 +64,7 @@ export class AudioHandler {
       this.source.connect(this.processor);
       this.processor.connect(this.inputContext.destination);
     } catch (error) {
-      console.error("Error starting audio capture:", error);
+      console.error("Error in startCapture:", error);
       this.stopCapture();
       throw error;
     }

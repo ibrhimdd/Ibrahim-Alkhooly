@@ -116,12 +116,10 @@ export default function App() {
       await audioHandlerRef.current.startCapture();
       console.log("Microphone access granted.");
 
-      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-
-if (!apiKey) {
-  throw new Error("مفتاح API غير موجود. تأكد من إضافته في إعدادات Vercel باسم VITE_GEMINI_API_KEY");
-}
-
+      const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
+      if (!apiKey) {
+        throw new Error("API Key is missing. Please check your environment settings.");
+      }
 
       const ai = new GoogleGenAI({ apiKey });
       console.log("Connecting to Live API with model:", MODEL_NAME);
@@ -251,7 +249,7 @@ if (!apiKey) {
                 }
                 return [...prev.slice(-10), { role: 'user', text: userText }];
               });
-                        }
+            }
           },
           onerror: (error: any) => {
             console.error("Live API Error:", error);
@@ -266,7 +264,6 @@ if (!apiKey) {
             }
             stopSession();
           },
-
           onclose: () => {
             setStatus('idle');
             stopSession();
@@ -594,6 +591,26 @@ if (!apiKey) {
           </AnimatePresence>
           <div ref={transcriptEndRef} />
         </div>
+
+        {/* Error Message Display */}
+        <AnimatePresence>
+          {errorMessage && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 10 }}
+              className="mb-8 p-4 bg-red-500/10 border border-red-500/20 rounded-2xl text-center"
+            >
+              <p className="text-sm text-red-500 font-medium font-cairo">{errorMessage}</p>
+              <button 
+                onClick={() => setErrorMessage(null)}
+                className="mt-2 text-[10px] text-red-500/60 hover:text-red-500 underline uppercase tracking-widest font-bold"
+              >
+                إغلاق
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Controls */}
         <div className="mt-auto flex flex-col items-center gap-8">
