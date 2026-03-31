@@ -27,6 +27,12 @@ export class AudioHandler {
       await this.inputContext.resume();
     }
 
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      const error = new Error("متصفحك لا يدعم الوصول إلى الميكروفون أو أنك في بيئة غير آمنة (HTTP).");
+      console.error("Audio capture not supported:", error);
+      throw error;
+    }
+
     try {
       this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       

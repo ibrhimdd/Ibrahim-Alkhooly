@@ -19,6 +19,8 @@ service cloud.firestore {
     //   - category: string (required)
     //   - content: string (required)
     //   - lastUpdated: timestamp (optional)
+    //   - chunkIndex: number (optional)
+    //   - totalChunks: number (optional)
     //
     // ===============================================================
 
@@ -43,10 +45,13 @@ service cloud.firestore {
     }
 
     function isValidInfo(data) {
-      return data.keys().hasOnly(['category', 'content', 'lastUpdated']) &&
+      return data.keys().hasAll(['category', 'content']) &&
+             data.keys().hasOnly(['category', 'content', 'lastUpdated', 'chunkIndex', 'totalChunks']) &&
              data.category is string && data.category.size() > 0 && data.category.size() < 100 &&
-             data.content is string && data.content.size() > 0 && data.content.size() < 10000 &&
-             (!('lastUpdated' in data) || data.lastUpdated is timestamp);
+             data.content is string && data.content.size() > 0 && data.content.size() < 100000 &&
+             (!('lastUpdated' in data) || data.lastUpdated is timestamp) &&
+             (!('chunkIndex' in data) || data.chunkIndex is number) &&
+             (!('totalChunks' in data) || data.totalChunks is number);
     }
 
     // Rules
