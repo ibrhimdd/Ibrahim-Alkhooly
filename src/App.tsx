@@ -250,7 +250,7 @@ export default function App() {
                 return [...prev.slice(-10), { role: 'user', text: userText }];
               });
             }
-          },
+          }
           onerror: (error: any) => {
             console.error("Live API Error:", error);
             setStatus('error');
