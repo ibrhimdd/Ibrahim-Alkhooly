@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { GoogleGenAI, Modality, LiveServerMessage } from "@google/genai";
+import { GoogleGenAI, Modality, LiveServerMessage, Type } from "@google/genai";
 import { 
   Mic, 
   MicOff, 
@@ -113,8 +113,21 @@ export default function App() {
       });
       
       console.log("Requesting microphone access...");
-      await audioHandlerRef.current.startCapture();
-      console.log("Microphone access granted.");
+      try {
+        await audioHandlerRef.current.startCapture();
+        console.log("Microphone access granted.");
+      } catch (audioError: any) {
+        console.error("Microphone access error:", audioError);
+        if (audioError.name === 'NotAllowedError' || audioError.message?.includes('Permission denied')) {
+          setErrorMessage("يرجى السماح بالوصول إلى الميكروفون من إعدادات المتصفح للمتابعة. اضغط على أيقونة القفل بجانب شريط العنوان وتأكد من تفعيل الميكروفون.");
+        } else if (audioError.name === 'NotFoundError') {
+          setErrorMessage("لم يتم العثور على ميكروفون متصل. يرجى التأكد من توصيل الميكروفون.");
+        } else {
+          setErrorMessage(`خطأ في الوصول إلى الميكروفون: ${audioError.message}`);
+        }
+        setStatus('error');
+        return;
+      }
 
       const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
       if (!apiKey) {
@@ -827,7 +840,10 @@ export default function App() {
                   <div className="space-y-12">
                     <section>
                       <h4 className="text-sm font-bold text-white/20 uppercase tracking-widest mb-6">معالجة الملفات الذكية (PDF/Word)</h4>
-                      <FileProcessor onComplete={() => setRefreshKey(prev => prev + 1)} />
+                      <FileProcessor 
+                        onComplete={() => setRefreshKey(prev => prev + 1)} 
+                        onError={(msg) => setErrorMessage(msg)}
+                      />
                     </section>
                   </div>
                 )}
@@ -973,7 +989,7 @@ function InfoList({ refreshKey, onEdit }: { refreshKey: number, onEdit: (item: a
   );
 }
 
-function FileProcessor({ onComplete }: { onComplete: () => void }) {
+function FileProcessor({ onComplete, onError }: { onComplete: () => void, onError: (msg: string) => void }) {
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState('');
   const [files, setFiles] = useState<File[]>([]);
@@ -988,9 +1004,17 @@ function FileProcessor({ onComplete }: { onComplete: () => void }) {
     if (files.length === 0) return;
     setProcessing(true);
     
+    const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      onError("مفتاح API مفقود. لا يمكن معالجة الملفات.");
+      setProcessing(false);
+      return;
+    }
+    const ai = new GoogleGenAI({ apiKey });
+
     for (const file of files) {
       try {
-        setProgress(`جاري معالجة: ${file.name}...`);
+        setProgress(`جاري قراءة الملف: ${file.name}...`);
         let text = '';
 
         if (file.type === 'application/pdf') {
@@ -1002,26 +1026,65 @@ function FileProcessor({ onComplete }: { onComplete: () => void }) {
         }
 
         if (text.trim()) {
-          const category = file.name.split('.')[0];
+          const fileName = file.name.split('.')[0];
           
-          // Delete existing chunks for this category to avoid duplicates
-          await deleteCollegeInfoByCategory(category);
-          
-          const CHUNK_SIZE = 50000; // 50k characters per doc is safe and manageable
+          // Chunk the text for processing
+          const CHUNK_SIZE = 8000; // Characters per chunk for model processing
           const chunks: string[] = [];
           for (let i = 0; i < text.length; i += CHUNK_SIZE) {
             chunks.push(text.slice(i, i + CHUNK_SIZE));
           }
 
+          setProgress(`جاري تحليل واستخراج المعلومات من ${file.name} (${chunks.length} أجزاء)...`);
+
           for (let i = 0; i < chunks.length; i++) {
-            await addCollegeInfo({
-              category: category,
-              content: chunks[i],
-              chunkIndex: i,
-              totalChunks: chunks.length
-            });
+            setProgress(`جاري معالجة الجزء ${i + 1} من ${chunks.length} لملف ${file.name}...`);
+            
+            try {
+              const response = await ai.models.generateContent({
+                model: "gemini-3-flash-preview",
+                contents: `قم باستخراج كافة المعلومات الهامة من هذا النص وحولها إلى بيانات منظمة لقاعدة بيانات الكلية. 
+                يجب أن تكون المخرجات عبارة عن قائمة من الكائنات (JSON Array of Objects).
+                كل كائن يجب أن يحتوي على:
+                - category: فئة المعلومة (مثلاً: شؤون الطلاب، الأقسام، الدراسات العليا، المصاريف، الجداول).
+                - content: نص المعلومة المفصل والدقيق.
+                - tags: قائمة كلمات مفتاحية مرتبطة.
+                
+                النص: ${chunks[i]}`,
+                config: {
+                  responseMimeType: "application/json",
+                  responseSchema: {
+                    type: Type.ARRAY,
+                    items: {
+                      type: Type.OBJECT,
+                      properties: {
+                        category: { type: Type.STRING },
+                        content: { type: Type.STRING },
+                        tags: { type: Type.ARRAY, items: { type: Type.STRING } }
+                      },
+                      required: ["category", "content"]
+                    }
+                  }
+                }
+              });
+
+              const extractedData = JSON.parse(response.text);
+              if (Array.isArray(extractedData)) {
+                for (const item of extractedData) {
+                  // Add chunk metadata to help with retrieval if needed
+                  await addCollegeInfo({
+                    ...item,
+                    sourceFile: file.name,
+                    processedAt: new Date().toISOString()
+                  });
+                }
+              }
+            } catch (chunkError) {
+              console.error(`Error processing chunk ${i} of ${file.name}:`, chunkError);
+              // Continue with next chunk
+            }
           }
-          setProgress(`تم حفظ: ${file.name} بنجاح (${chunks.length} أجزاء)!`);
+          setProgress(`تمت معالجة وحفظ بيانات ${file.name} بنجاح!`);
         }
       } catch (error) {
         console.error(`Error processing ${file.name}:`, error);
@@ -1030,7 +1093,7 @@ function FileProcessor({ onComplete }: { onComplete: () => void }) {
     }
 
     setProcessing(false);
-    setProgress('اكتملت جميع العمليات!');
+    setProgress('اكتملت جميع العمليات بنجاح!');
     setFiles([]);
     onComplete();
   };

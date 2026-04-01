@@ -1,6 +1,18 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore, collection, query, where, getDocs, limit, addDoc, serverTimestamp } from 'firebase/firestore';
+import { 
+  getFirestore, 
+  collection, 
+  query, 
+  where, 
+  getDocs, 
+  limit, 
+  addDoc, 
+  serverTimestamp,
+  doc,
+  updateDoc,
+  deleteDoc
+} from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
 // Initialize Firebase
@@ -116,7 +128,6 @@ export async function addCollegeInfo(data: { category: string, content: string, 
 }
 
 // Function to delete college info by category
-import { deleteDoc as deleteDocRef } from 'firebase/firestore';
 export async function deleteCollegeInfoByCategory(category: string) {
   const path = 'college_info';
   try {
@@ -222,9 +233,6 @@ export async function getAllCollegeInfo() {
     return [];
   }
 }
-
-// Update and Delete functions
-import { doc, updateDoc, deleteDoc } from 'firebase/firestore';
 
 export async function updateMedia(id: string, data: any) {
   const path = `media/${id}`;
