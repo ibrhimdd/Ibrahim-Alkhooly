@@ -241,17 +241,12 @@ export default function App() {
                 }
               }
             }
-
-            // Handle model transcription
+// Handle model transcription
             const modelParts = message.serverContent?.modelTurn?.parts;
             if (modelParts) {
               const modelText = modelParts.map(p => p.text).filter(Boolean).join(' ');
               if (modelText.trim()) {
-                setTranscript(prev => {
-                  // If last message was model, we might be getting more parts of the same turn
-                  // But usually Live API sends chunks. Let's just append for now but keep more history.
-                  return [...prev.slice(-10), { role: 'model', text: modelText }];
-                });
+                setTranscript(prev => [...prev.slice(-10), { role: 'model', text: modelText }]);
               }
             }
 
@@ -259,18 +254,16 @@ export default function App() {
             const userText = message.serverContent?.inputTranscription?.text;
             if (userText) {
               setTranscript(prev => {
-                // Avoid duplicate user transcripts
                 if (prev.length > 0 && prev[prev.length - 1].role === 'user' && prev[prev.length - 1].text === userText) {
                   return prev;
                 }
                 return [...prev.slice(-10), { role: 'user', text: userText }];
               });
             }
-          },
+          }, // السطر ده هو اللي بيقفل دالة onmessage (تأكد إنه قوس واحد فقط)
           onerror: (error: any) => {
             console.error("Live API Error:", error);
             setStatus('error');
-            
             if (error?.message?.includes('Network error') || error?.message?.includes('Requested entity was not found')) {
               setErrorMessage("حدث خطأ في الشبكة أو المفتاح البرمجي. يرجى إعادة اختيار المفتاح البرمجي والتأكد من اتصالك.");
             } else if (error?.message?.includes('service is currently unavailable')) {
