@@ -147,7 +147,10 @@ export default function App() {
           systemInstruction: SYSTEM_INSTRUCTION,
           inputAudioTranscription: {},
           outputAudioTranscription: {},
-          tools: [{ googleSearch: {} }, { functionDeclarations: [GET_MEDIA_CONTENT_TOOL, GET_COLLEGE_INFO_TOOL] }] as any,
+          tools: [
+            { googleSearch: {} },
+            { functionDeclarations: [GET_MEDIA_CONTENT_TOOL as any, GET_COLLEGE_INFO_TOOL as any] }
+          ] as any,
         },
         callbacks: {
           onopen: () => {
