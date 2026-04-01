@@ -134,7 +134,6 @@ fetch(`/api/proxy?q=${encodeURIComponent(query)}`)
                 });
               }
             }
-
             // Handle user transcription
             const userText = message.serverContent?.inputTranscription?.text;
             if (userText) {
@@ -146,19 +145,21 @@ fetch(`/api/proxy?q=${encodeURIComponent(query)}`)
                 return [...prev.slice(-10), { role: 'user', text: userText }];
               });
             }
-          },
-          onerror: (error) => {
+          }, // <--- القوس ده والفاصلة دي هم اللي بيقفلوا دالة onmessage صح
+
+          onerror: (error: any) => {
             console.error("Live API Error:", error);
             setStatus('error');
             setErrorMessage("حدث خطأ في الاتصال. يرجى المحاولة مرة أخرى.");
             stopSession();
           },
+
           onclose: () => {
             setStatus('idle');
             stopSession();
           }
         }
-      });
+
 
       sessionRef.current = await sessionPromise;
     } catch (error) {
