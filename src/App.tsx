@@ -457,7 +457,7 @@ export default function App() {
                   </h2>
                 </div>
                 <p className="text-white/50 max-w-lg mx-auto text-xl font-medium leading-relaxed font-cairo">
-                  تحدث معي مباشرة للحصول على معلومات حول الأقسام، شؤون الطلاب، والدراسات العليا بكلية التربية النوعية.
+                  تحدث  مباشرة للحصول على معلومات حول الأقسام، شؤون الطلاب، والدراسات العليا بكلية التربية النوعية.
                 </p>
               </motion.div>
             ) : (
