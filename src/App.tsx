@@ -707,7 +707,7 @@ export default function App() {
         {/* Footer Signature */}
         <footer className="mt-12 py-8 border-t border-white/5 text-center">
           <p className="text-[10px] font-bold text-white/20 uppercase tracking-[0.3em] font-cairo">
-            by ibrahim Ellhooly
+            by ibrahim Elkhooly 2026©
           </p>
         </footer>
       </main>
