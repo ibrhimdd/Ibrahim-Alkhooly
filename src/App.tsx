@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { GoogleGenAI, Modality, LiveServerMessage } from "@google/genai";
+import { GoogleGenAI, Modality, LiveServerMessage, Type } from "@google/genai";
 import { 
   Mic, 
   MicOff, 
@@ -22,7 +22,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { AudioHandler } from './utils/audio';
 import { SYSTEM_INSTRUCTION, MODEL_NAME, GET_MEDIA_CONTENT_TOOL, GET_COLLEGE_INFO_TOOL } from './constants';
-import { getMediaByQuery, addMedia, addCollegeInfo, auth, getCollegeInfoByCategory, getAllMedia, getAllCollegeInfo, updateMedia, deleteMedia, updateCollegeInfo, deleteCollegeInfo } from './firebase';
+import { getMediaByQuery, addMedia, addCollegeInfo, auth, getCollegeInfoByCategory, getAllMedia, getAllCollegeInfo, updateMedia, deleteMedia, updateCollegeInfo, deleteCollegeInfo, deleteCollegeInfoByCategory } from './firebase';
 import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import * as pdfjsLib from 'pdfjs-dist';
 import mammoth from 'mammoth';
@@ -113,8 +113,21 @@ export default function App() {
       });
       
       console.log("Requesting microphone access...");
-      await audioHandlerRef.current.startCapture();
-      console.log("Microphone access granted.");
+      try {
+        await audioHandlerRef.current.startCapture();
+        console.log("Microphone access granted.");
+      } catch (audioError: any) {
+        console.error("Microphone access error:", audioError);
+        if (audioError.name === 'NotAllowedError' || audioError.message?.includes('Permission denied')) {
+          setErrorMessage("يرجى السماح بالوصول إلى الميكروفون من إعدادات المتصفح للمتابعة. اضغط على أيقونة القفل بجانب شريط العنوان وتأكد من تفعيل الميكروفون.");
+        } else if (audioError.name === 'NotFoundError') {
+          setErrorMessage("لم يتم العثور على ميكروفون متصل. يرجى التأكد من توصيل الميكروفون.");
+        } else {
+          setErrorMessage(`خطأ في الوصول إلى الميكروفون: ${audioError.message}`);
+        }
+        setStatus('error');
+        return;
+      }
 
       const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
       if (!apiKey) {
@@ -132,9 +145,9 @@ export default function App() {
             voiceConfig: { prebuiltVoiceConfig: { voiceName: "Zephyr" } },
           },
           systemInstruction: SYSTEM_INSTRUCTION,
-          inputAudioTranscription: {},
-          outputAudioTranscription: {},
-          tools: [{ googleSearch: {} }, { functionDeclarations: [GET_MEDIA_CONTENT_TOOL, GET_COLLEGE_INFO_TOOL] }] as any,
+          tools: [
+            { functionDeclarations: [GET_MEDIA_CONTENT_TOOL, GET_COLLEGE_INFO_TOOL] }
+          ],
         },
         callbacks: {
           onopen: () => {
@@ -255,12 +268,13 @@ export default function App() {
             console.error("Live API Error:", error);
             setStatus('error');
             
-            if (error?.message?.includes('Network error') || error?.message?.includes('Requested entity was not found')) {
-              setErrorMessage("حدث خطأ في الشبكة أو المفتاح البرمجي. يرجى إعادة اختيار المفتاح البرمجي والتأكد من اتصالك.");
-            } else if (error?.message?.includes('service is currently unavailable')) {
+            const msg = error?.message || "";
+            if (msg.includes('Network error') || msg.includes('Requested entity was not found') || msg.includes('403') || msg.includes('404')) {
+              setErrorMessage("حدث خطأ في الاتصال أو المفتاح البرمجي. قد تحتاج إلى إعادة اختيار مفتاح برمجي صالح (Paid API Key) لخدمة البث المباشر.");
+            } else if (msg.includes('service is currently unavailable')) {
               setErrorMessage("الخدمة غير متوفرة حالياً. يرجى المحاولة مرة أخرى بعد قليل.");
             } else {
-              setErrorMessage("حدث خطأ في الاتصال. يرجى المحاولة مرة أخرى.");
+              setErrorMessage(`حدث خطأ: ${msg || "يرجى المحاولة مرة أخرى"}`);
             }
             stopSession();
           },
@@ -457,7 +471,7 @@ export default function App() {
                   </h2>
                 </div>
                 <p className="text-white/50 max-w-lg mx-auto text-xl font-medium leading-relaxed font-cairo">
-                  تحدث  مباشرة للحصول على معلومات حول الأقسام، شؤون الطلاب، والدراسات العليا بكلية التربية النوعية.
+                  تحدث معي مباشرة للحصول على معلومات حول الأقسام، شؤون الطلاب، والدراسات العليا بكلية التربية النوعية.
                 </p>
               </motion.div>
             ) : (
@@ -592,6 +606,40 @@ export default function App() {
           <div ref={transcriptEndRef} />
         </div>
 
+        {/* Error Message Display */}
+        <AnimatePresence>
+          {errorMessage && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 10 }}
+              className="mb-8 p-6 bg-red-500/10 border border-red-500/20 rounded-3xl text-center space-y-4"
+            >
+              <p className="text-sm text-red-500 font-medium font-cairo">{errorMessage}</p>
+              <div className="flex justify-center gap-4">
+                <button 
+                  onClick={async () => {
+                    if (window.aistudio) {
+                      await window.aistudio.openSelectKey();
+                      setErrorMessage(null);
+                      toggleSession();
+                    }
+                  }}
+                  className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-500 text-[10px] font-bold rounded-xl transition-all uppercase tracking-widest"
+                >
+                  إصلاح الاتصال / اختيار مفتاح جديد
+                </button>
+                <button 
+                  onClick={() => setErrorMessage(null)}
+                  className="px-4 py-2 bg-white/5 hover:bg-white/10 text-white/40 hover:text-white/60 text-[10px] font-bold rounded-xl transition-all uppercase tracking-widest"
+                >
+                  إغلاق
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Controls */}
         <div className="mt-auto flex flex-col items-center gap-8">
           <button
@@ -656,6 +704,12 @@ export default function App() {
             </div>
           </div>
         </div>
+        {/* Footer Signature */}
+        <footer className="mt-12 py-8 border-t border-white/5 text-center">
+          <p className="text-[10px] font-bold text-white/20 uppercase tracking-[0.3em] font-cairo">
+            by ibrahim Ellhooly
+          </p>
+        </footer>
       </main>
 
       {/* Password Modal */}
@@ -807,7 +861,10 @@ export default function App() {
                   <div className="space-y-12">
                     <section>
                       <h4 className="text-sm font-bold text-white/20 uppercase tracking-widest mb-6">معالجة الملفات الذكية (PDF/Word)</h4>
-                      <FileProcessor onComplete={() => setRefreshKey(prev => prev + 1)} />
+                      <FileProcessor 
+                        onComplete={() => setRefreshKey(prev => prev + 1)} 
+                        onError={(msg) => setErrorMessage(msg)}
+                      />
                     </section>
                   </div>
                 )}
@@ -953,7 +1010,7 @@ function InfoList({ refreshKey, onEdit }: { refreshKey: number, onEdit: (item: a
   );
 }
 
-function FileProcessor({ onComplete }: { onComplete: () => void }) {
+function FileProcessor({ onComplete, onError }: { onComplete: () => void, onError: (msg: string) => void }) {
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState('');
   const [files, setFiles] = useState<File[]>([]);
@@ -968,9 +1025,17 @@ function FileProcessor({ onComplete }: { onComplete: () => void }) {
     if (files.length === 0) return;
     setProcessing(true);
     
+    const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      onError("مفتاح API مفقود. لا يمكن معالجة الملفات.");
+      setProcessing(false);
+      return;
+    }
+    const ai = new GoogleGenAI({ apiKey });
+
     for (const file of files) {
       try {
-        setProgress(`جاري معالجة: ${file.name}...`);
+        setProgress(`جاري قراءة الملف: ${file.name}...`);
         let text = '';
 
         if (file.type === 'application/pdf') {
@@ -982,14 +1047,65 @@ function FileProcessor({ onComplete }: { onComplete: () => void }) {
         }
 
         if (text.trim()) {
-          // Split text into chunks if it's too large for a single Firestore doc (optional but good practice)
-          // For now, we'll save it as a single entry or split by paragraphs
-          const category = file.name.split('.')[0];
-          await addCollegeInfo({
-            category: category,
-            content: text.slice(0, 5000) // Limit size for now
-          });
-          setProgress(`تم حفظ: ${file.name} بنجاح!`);
+          const fileName = file.name.split('.')[0];
+          
+          // Chunk the text for processing
+          const CHUNK_SIZE = 8000; // Characters per chunk for model processing
+          const chunks: string[] = [];
+          for (let i = 0; i < text.length; i += CHUNK_SIZE) {
+            chunks.push(text.slice(i, i + CHUNK_SIZE));
+          }
+
+          setProgress(`جاري تحليل واستخراج المعلومات من ${file.name} (${chunks.length} أجزاء)...`);
+
+          for (let i = 0; i < chunks.length; i++) {
+            setProgress(`جاري معالجة الجزء ${i + 1} من ${chunks.length} لملف ${file.name}...`);
+            
+            try {
+              const response = await ai.models.generateContent({
+                model: "gemini-3-flash-preview",
+                contents: `قم باستخراج كافة المعلومات الهامة من هذا النص وحولها إلى بيانات منظمة لقاعدة بيانات الكلية. 
+                يجب أن تكون المخرجات عبارة عن قائمة من الكائنات (JSON Array of Objects).
+                كل كائن يجب أن يحتوي على:
+                - category: فئة المعلومة (مثلاً: شؤون الطلاب، الأقسام، الدراسات العليا، المصاريف، الجداول).
+                - content: نص المعلومة المفصل والدقيق.
+                - tags: قائمة كلمات مفتاحية مرتبطة.
+                
+                النص: ${chunks[i]}`,
+                config: {
+                  responseMimeType: "application/json",
+                  responseSchema: {
+                    type: Type.ARRAY,
+                    items: {
+                      type: Type.OBJECT,
+                      properties: {
+                        category: { type: Type.STRING },
+                        content: { type: Type.STRING },
+                        tags: { type: Type.ARRAY, items: { type: Type.STRING } }
+                      },
+                      required: ["category", "content"]
+                    }
+                  }
+                }
+              });
+
+              const extractedData = JSON.parse(response.text);
+              if (Array.isArray(extractedData)) {
+                for (const item of extractedData) {
+                  // Add chunk metadata to help with retrieval if needed
+                  await addCollegeInfo({
+                    ...item,
+                    sourceFile: file.name,
+                    processedAt: new Date().toISOString()
+                  });
+                }
+              }
+            } catch (chunkError) {
+              console.error(`Error processing chunk ${i} of ${file.name}:`, chunkError);
+              // Continue with next chunk
+            }
+          }
+          setProgress(`تمت معالجة وحفظ بيانات ${file.name} بنجاح!`);
         }
       } catch (error) {
         console.error(`Error processing ${file.name}:`, error);
@@ -998,7 +1114,7 @@ function FileProcessor({ onComplete }: { onComplete: () => void }) {
     }
 
     setProcessing(false);
-    setProgress('اكتملت جميع العمليات!');
+    setProgress('اكتملت جميع العمليات بنجاح!');
     setFiles([]);
     onComplete();
   };
