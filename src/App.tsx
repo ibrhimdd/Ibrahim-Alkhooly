@@ -63,10 +63,31 @@ export default function App() {
   const [editingInfo, setEditingInfo] = useState<any>(null);
   
   const [isSearching, setIsSearching] = useState(false);
+  const [hasApiKey, setHasApiKey] = useState<boolean | null>(null);
   
   const audioHandlerRef = useRef<AudioHandler | null>(null);
   const sessionRef = useRef<any>(null);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const checkApiKey = async () => {
+      if (window.aistudio) {
+        const selected = await window.aistudio.hasSelectedApiKey();
+        setHasApiKey(selected);
+      } else {
+        // Fallback for local development or if aistudio is not available
+        setHasApiKey(!!(process.env.API_KEY || process.env.GEMINI_API_KEY));
+      }
+    };
+    checkApiKey();
+  }, []);
+
+  const handleSelectKey = async () => {
+    if (window.aistudio) {
+      await window.aistudio.openSelectKey();
+      setHasApiKey(true);
+    }
+  };
 
   useEffect(() => {
     if (transcriptEndRef.current) {
@@ -100,6 +121,18 @@ export default function App() {
   const startSession = async () => {
     try {
       setErrorMessage(null);
+      
+      // Check for API key selection first
+      if (window.aistudio) {
+        const selected = await window.aistudio.hasSelectedApiKey();
+        if (!selected) {
+          setErrorMessage("يرجى اختيار مفتاح برمجي (API Key) من مشروع مدفوع للمتابعة.");
+          await window.aistudio.openSelectKey();
+          // Assume success after opening dialog as per guidelines
+          setHasApiKey(true);
+        }
+      }
+
       setStatus('connecting');
       console.log("Starting session...");
 
@@ -271,8 +304,11 @@ export default function App() {
             console.error("Live API Error:", error);
             setStatus('error');
             
-            if (error?.message?.includes('Network error') || error?.message?.includes('Requested entity was not found')) {
-              setErrorMessage("حدث خطأ في الشبكة أو المفتاح البرمجي. يرجى إعادة اختيار المفتاح البرمجي والتأكد من اتصالك.");
+            if (error?.message?.includes('Requested entity was not found')) {
+              setErrorMessage("المفتاح البرمجي غير صالح أو لم يتم اختياره. يرجى إعادة اختيار مفتاح برمجي من مشروع مدفوع.");
+              setHasApiKey(false);
+            } else if (error?.message?.includes('Network error')) {
+              setErrorMessage("حدث خطأ في الشبكة. يرجى التأكد من اتصالك بالإنترنت.");
             } else if (error?.message?.includes('service is currently unavailable')) {
               setErrorMessage("الخدمة غير متوفرة حالياً. يرجى المحاولة مرة أخرى بعد قليل.");
             } else {
@@ -293,6 +329,9 @@ export default function App() {
       setStatus('error');
       if (error?.name === 'NotAllowedError' || error?.message?.includes('Permission denied')) {
         setErrorMessage("يرجى السماح بالوصول إلى الميكروفون من إعدادات المتصفح للمتابعة.");
+      } else if (error?.message?.includes('Requested entity was not found')) {
+        setErrorMessage("المفتاح البرمجي غير صالح أو لم يتم اختياره. يرجى إعادة اختيار مفتاح برمجي من مشروع مدفوع.");
+        setHasApiKey(false);
       } else {
         setErrorMessage("تعذر بدء الجلسة. تأكد من إعدادات الميكروفون والمفتاح البرمجي.");
       }
@@ -372,6 +411,43 @@ export default function App() {
       </div>
 
       <main className="relative z-10 max-w-4xl mx-auto px-6 pt-12 pb-24 min-h-screen flex flex-col">
+        {hasApiKey === false && (
+          <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-center justify-center p-6 text-center">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="max-w-md bg-[#1a1008] rounded-[40px] shadow-2xl p-10 border border-orange-500/20 relative overflow-hidden"
+            >
+              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-orange-500 to-transparent" />
+              <div className="w-20 h-20 bg-orange-500/10 rounded-3xl flex items-center justify-center mx-auto mb-8 orange-glow">
+                <Sparkles className="w-10 h-10 text-orange-500" />
+              </div>
+              <h2 className="text-3xl font-bold text-white mb-4 tracking-tight">إعداد المساعد الذكي</h2>
+              <p className="text-white/60 mb-10 leading-relaxed text-sm">
+                لتفعيل المساعد الصوتي المتطور، يرجى اختيار مفتاح برمجي (API Key) من مشروع مدفوع في Google Cloud.
+                <br />
+                <span className="text-xs text-orange-500/80 mt-3 block font-bold">
+                  (يتطلب نموذج Gemini 3.1 Live اشتراكاً مفعلاً)
+                </span>
+              </p>
+              <button
+                onClick={handleSelectKey}
+                className="w-full py-5 bg-gradient-to-r from-orange-600 to-orange-700 hover:from-orange-500 hover:to-orange-600 text-white rounded-2xl font-bold transition-all shadow-xl shadow-orange-900/20 flex items-center justify-center gap-3 hover:scale-[1.02] active:scale-[0.98]"
+              >
+                <RefreshCcw className="w-6 h-6" />
+                اختيار المفتاح البرمجي
+              </button>
+              <a 
+                href="https://ai.google.dev/gemini-api/docs/billing" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="mt-6 block text-xs text-white/30 hover:text-orange-500 transition-colors"
+              >
+                تعرف على كيفية تفعيل الفوترة في Google Cloud
+              </a>
+            </motion.div>
+          </div>
+        )}
         {/* Header */}
         <header className="flex justify-between items-center mb-12 glass-panel p-4 rounded-3xl">
           <div className="flex items-center gap-4">
