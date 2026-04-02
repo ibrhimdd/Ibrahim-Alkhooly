@@ -46,7 +46,7 @@ declare global {
 }
 
 // يمكنك وضع مفتاح Gemini API الخاص بك هنا مباشرة
-const HARDCODED_API_KEY = ""; 
+const HARDCODED_API_KEY = "AIzaSyBDOspmPpeM98Wm3IXzI96A2iVyMzYdyDw"; 
 
 export default function App() {
   const [isActive, setIsActive] = useState(false);
