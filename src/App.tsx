@@ -45,6 +45,9 @@ declare global {
   }
 }
 
+// يمكنك وضع مفتاح Gemini API الخاص بك هنا مباشرة
+const HARDCODED_API_KEY = ""; 
+
 export default function App() {
   const [isActive, setIsActive] = useState(false);
   const [status, setStatus] = useState<'idle' | 'connecting' | 'active' | 'error'>('idle');
@@ -63,7 +66,7 @@ export default function App() {
   const [editingInfo, setEditingInfo] = useState<any>(null);
   
   const [isSearching, setIsSearching] = useState(false);
-  const [hasApiKey, setHasApiKey] = useState<boolean | null>(null);
+  const [hasApiKey, setHasApiKey] = useState<boolean | null>(true);
   
   const audioHandlerRef = useRef<AudioHandler | null>(null);
   const sessionRef = useRef<any>(null);
@@ -71,11 +74,12 @@ export default function App() {
 
   useEffect(() => {
     const checkApiKey = async () => {
-      if (window.aistudio) {
+      if (HARDCODED_API_KEY) {
+        setHasApiKey(true);
+      } else if (window.aistudio) {
         const selected = await window.aistudio.hasSelectedApiKey();
         setHasApiKey(selected);
       } else {
-        // Fallback for local development or if aistudio is not available
         setHasApiKey(!!(process.env.API_KEY || process.env.GEMINI_API_KEY));
       }
     };
@@ -162,9 +166,11 @@ export default function App() {
         return;
       }
 
-      const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
+      const apiKey = HARDCODED_API_KEY || process.env.API_KEY || process.env.GEMINI_API_KEY;
       if (!apiKey) {
-        throw new Error("API Key is missing. Please check your environment settings.");
+        setErrorMessage("يرجى وضع المفتاح البرمجي (API Key) في الكود أو اختياره للمتابعة.");
+        if (window.aistudio) await window.aistudio.openSelectKey();
+        return;
       }
 
       const ai = new GoogleGenAI({ apiKey });
@@ -411,7 +417,7 @@ export default function App() {
       </div>
 
       <main className="relative z-10 max-w-4xl mx-auto px-6 pt-12 pb-24 min-h-screen flex flex-col">
-        {hasApiKey === false && (
+        {hasApiKey === false && !HARDCODED_API_KEY && (
           <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-center justify-center p-6 text-center">
             <motion.div 
               initial={{ opacity: 0, scale: 0.9 }}
@@ -1083,9 +1089,9 @@ function FileProcessor({ onComplete, onError }: { onComplete: () => void, onErro
     if (files.length === 0) return;
     setProcessing(true);
     
-    const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
+    const apiKey = HARDCODED_API_KEY || process.env.API_KEY || process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      onError("مفتاح API مفقود. لا يمكن معالجة الملفات.");
+      onError("مفتاح API مفقود. يرجى وضعه في الكود أولاً.");
       setProcessing(false);
       return;
     }
