@@ -43,14 +43,6 @@
           "type": "string",
           "description": "The detailed text content."
         },
-        "chunkIndex": {
-          "type": "integer",
-          "description": "The index of the chunk (0-based)."
-        },
-        "totalChunks": {
-          "type": "integer",
-          "description": "The total number of chunks for this category."
-        },
         "lastUpdated": {
           "type": "string",
           "format": "date-time",
