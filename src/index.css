@@ -46,6 +46,13 @@
     -ms-overflow-style: none;
     scrollbar-width: none;
   }
+
+  /* Mobile Frame Styles */
+  @media (min-width: 768px) {
+    .mobile-frame {
+      box-shadow: 0 0 0 12px #1a1a1a, 0 0 0 14px #333, 0 30px 60px rgba(0,0,0,0.5);
+    }
+  }
 }
 
 @keyframes float {

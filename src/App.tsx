@@ -22,7 +22,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { AudioHandler } from './utils/audio';
 import { SYSTEM_INSTRUCTION, MODEL_NAME, GET_MEDIA_CONTENT_TOOL, GET_COLLEGE_INFO_TOOL } from './constants';
-import { getMediaByQuery, addMedia, addCollegeInfo, auth, getCollegeInfoByCategory, getAllMedia, getAllCollegeInfo, updateMedia, deleteMedia, updateCollegeInfo, deleteCollegeInfo, deleteCollegeInfoByCategory } from './firebase';
+import { getMediaByQuery, addMedia, addCollegeInfo, auth, getCollegeInfoByQuery, getAllMedia, getAllCollegeInfo, updateMedia, deleteMedia, updateCollegeInfo, deleteCollegeInfo, deleteCollegeInfoByCategory } from './firebase';
 import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import * as pdfjsLib from 'pdfjs-dist';
 import mammoth from 'mammoth';
@@ -45,13 +45,63 @@ declare global {
   }
 }
 
+// يمكنك وضع مفتاح Gemini API الخاص بك هنا مباشرة
+const HARDCODED_API_KEY = ""; 
+
+const LOGO_URL = "https://i.imgur.com/your-logo-id.png"; // سيقوم المستخدم باستبدال هذا برابط الصورة المرفوعة
+
+const SplashScreen = ({ onComplete }: { onComplete: () => void }) => {
+  return (
+    <motion.div
+      initial={{ opacity: 1 }}
+      animate={{ opacity: 0 }}
+      transition={{ duration: 1, delay: 3 }}
+      onAnimationComplete={onComplete}
+      className="fixed inset-0 z-[200] bg-[#0a0502] flex flex-col items-center justify-center p-6"
+    >
+      <motion.div
+        initial={{ scale: 0.5, opacity: 0, rotate: -10 }}
+        animate={{ scale: 1, opacity: 1, rotate: 0 }}
+        transition={{ 
+          duration: 1.5, 
+          ease: "easeOut",
+          type: "spring",
+          stiffness: 100
+        }}
+        className="relative"
+      >
+        <div className="absolute inset-0 bg-orange-500/20 blur-3xl rounded-full animate-pulse" />
+        <img 
+          src={LOGO_URL} 
+          alt="Logo" 
+          className="w-48 h-48 object-contain relative z-10"
+          onError={(e) => {
+            // Fallback if logo fails to load
+            (e.target as HTMLImageElement).src = "https://cdn-icons-png.flaticon.com/512/2991/2991148.png";
+          }}
+        />
+      </motion.div>
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 1, duration: 1 }}
+        className="mt-8 text-center"
+      >
+        <h1 className="text-3xl font-bold tracking-tight text-glow mb-2">كلية التربية النوعية</h1>
+        <p className="text-orange-500 font-bold uppercase tracking-[0.2em] text-xs">جامعة كفر الشيخ</p>
+      </motion.div>
+    </motion.div>
+  );
+};
+
 export default function App() {
+  const [showSplash, setShowSplash] = useState(true);
   const [isActive, setIsActive] = useState(false);
   const [status, setStatus] = useState<'idle' | 'connecting' | 'active' | 'error'>('idle');
   const [transcript, setTranscript] = useState<{ role: 'user' | 'model', text: string }[]>([]);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [mediaContent, setMediaContent] = useState<MediaItem | null>(null);
+  const [mediaContent, setMediaContent] = useState<MediaItem[]>([]);
   const [showAdmin, setShowAdmin] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [passwordInput, setPasswordInput] = useState('');
@@ -63,10 +113,25 @@ export default function App() {
   const [editingInfo, setEditingInfo] = useState<any>(null);
   
   const [isSearching, setIsSearching] = useState(false);
+  const [hasApiKey, setHasApiKey] = useState<boolean | null>(true);
   
   const audioHandlerRef = useRef<AudioHandler | null>(null);
   const sessionRef = useRef<any>(null);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const checkApiKey = async () => {
+      setHasApiKey(true);
+    };
+    checkApiKey();
+  }, []);
+
+  const handleSelectKey = async () => {
+    if (window.aistudio) {
+      await window.aistudio.openSelectKey();
+      setHasApiKey(true);
+    }
+  };
 
   useEffect(() => {
     if (transcriptEndRef.current) {
@@ -100,6 +165,7 @@ export default function App() {
   const startSession = async () => {
     try {
       setErrorMessage(null);
+      
       setStatus('connecting');
       console.log("Starting session...");
 
@@ -129,9 +195,11 @@ export default function App() {
         return;
       }
 
-      const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
+      const apiKey = HARDCODED_API_KEY || process.env.API_KEY || process.env.GEMINI_API_KEY;
       if (!apiKey) {
-        throw new Error("API Key is missing. Please check your environment settings.");
+        setErrorMessage("يرجى وضع المفتاح البرمجي (API Key) في الكود أو اختياره للمتابعة.");
+        if (window.aistudio) await window.aistudio.openSelectKey();
+        return;
       }
 
       const ai = new GoogleGenAI({ apiKey });
@@ -145,9 +213,12 @@ export default function App() {
             voiceConfig: { prebuiltVoiceConfig: { voiceName: "Zephyr" } },
           },
           systemInstruction: SYSTEM_INSTRUCTION,
+          inputAudioTranscription: {},
+          outputAudioTranscription: {},
           tools: [
-            { functionDeclarations: [GET_MEDIA_CONTENT_TOOL, GET_COLLEGE_INFO_TOOL] }
-          ],
+            { googleSearch: {} },
+            { functionDeclarations: [GET_MEDIA_CONTENT_TOOL as any, GET_COLLEGE_INFO_TOOL as any] }
+          ] as any,
         },
         callbacks: {
           onopen: () => {
@@ -187,13 +258,13 @@ export default function App() {
                   // Fetch from Firestore
                   getMediaByQuery(queryStr).then(async (data) => {
                     let resultMsg = "لم يتم العثور على وسائط لهذا البحث في قاعدة البيانات.";
-                    if (data) {
-                      setMediaContent({
-                        type: data.type as 'image' | 'video',
-                        url: data.url,
-                        title: data.title
-                      });
-                      resultMsg = `تم العثور على ${data.type === 'image' ? 'صورة' : 'فيديو'} بعنوان "${data.title}" وعرضه للمستخدم بنجاح.`;
+                    if (data && Array.isArray(data)) {
+                      setMediaContent(data.map(item => ({
+                        type: item.type as 'image' | 'video',
+                        url: item.url,
+                        title: item.title
+                      })));
+                      resultMsg = data.map(item => `تم العثور على ${item.type === 'image' ? 'صورة' : 'فيديو'} بعنوان "${item.title}" وعرضه للمستخدم بنجاح.`).join('\n');
                     }
                     console.log("Tool Result (Media):", resultMsg);
                     
@@ -212,13 +283,13 @@ export default function App() {
                     setIsSearching(false);
                   });
                 } else if (call.name === "get_college_info") {
-                  const category = (call.args as any).category;
-                  console.log("Executing Tool: get_college_info for", category);
+                  const queryText = (call.args as any).query || (call.args as any).category;
+                  console.log("Executing Tool: get_college_info for", queryText);
 
-                  getCollegeInfoByCategory(category).then(async (data) => {
+                  getCollegeInfoByQuery(queryText).then(async (data) => {
                     let resultMsg = "لم يتم العثور على معلومات نصية لهذه الفئة في قاعدة البيانات.";
-                    if (data) {
-                      resultMsg = `المعلومات الأكيدة من قاعدة البيانات لـ ${category} هي: ${data.content}`;
+                    if (data && Array.isArray(data)) {
+                      resultMsg = data.map(item => `الفئة: ${item.category}\nالمحتوى: ${item.content}`).join('\n\n');
                     }
                     console.log("Tool Result (Info):", resultMsg);
 
@@ -268,13 +339,15 @@ export default function App() {
             console.error("Live API Error:", error);
             setStatus('error');
             
-            const msg = error?.message || "";
-            if (msg.includes('Network error') || msg.includes('Requested entity was not found') || msg.includes('403') || msg.includes('404')) {
-              setErrorMessage("حدث خطأ في الاتصال أو المفتاح البرمجي. قد تحتاج إلى إعادة اختيار مفتاح برمجي صالح (Paid API Key) لخدمة البث المباشر.");
-            } else if (msg.includes('service is currently unavailable')) {
+            if (error?.message?.includes('Requested entity was not found')) {
+              setErrorMessage("المفتاح البرمجي غير صالح أو لم يتم اختياره. يرجى إعادة اختيار مفتاح برمجي من مشروع مدفوع.");
+              setHasApiKey(false);
+            } else if (error?.message?.includes('Network error')) {
+              setErrorMessage("حدث خطأ في الشبكة. يرجى التأكد من اتصالك بالإنترنت.");
+            } else if (error?.message?.includes('service is currently unavailable')) {
               setErrorMessage("الخدمة غير متوفرة حالياً. يرجى المحاولة مرة أخرى بعد قليل.");
             } else {
-              setErrorMessage(`حدث خطأ: ${msg || "يرجى المحاولة مرة أخرى"}`);
+              setErrorMessage("حدث خطأ في الاتصال. يرجى المحاولة مرة أخرى.");
             }
             stopSession();
           },
@@ -291,6 +364,9 @@ export default function App() {
       setStatus('error');
       if (error?.name === 'NotAllowedError' || error?.message?.includes('Permission denied')) {
         setErrorMessage("يرجى السماح بالوصول إلى الميكروفون من إعدادات المتصفح للمتابعة.");
+      } else if (error?.message?.includes('Requested entity was not found')) {
+        setErrorMessage("المفتاح البرمجي غير صالح أو لم يتم اختياره. يرجى إعادة اختيار مفتاح برمجي من مشروع مدفوع.");
+        setHasApiKey(false);
       } else {
         setErrorMessage("تعذر بدء الجلسة. تأكد من إعدادات الميكروفون والمفتاح البرمجي.");
       }
@@ -328,389 +404,294 @@ export default function App() {
           if (sessionRef.current) {
             sessionRef.current.sendRealtimeInput({ text: query });
           }
-        }, 2000);
+        }, 500);
       });
     }
   };
 
   const handleAdminAuth = () => {
-    setShowPasswordModal(true);
+    if (isAdminAuthenticated) {
+      setShowAdmin(true);
+    } else {
+      setShowPasswordModal(true);
+    }
   };
 
   const verifyPassword = () => {
-    if (passwordInput === "509077") {
+    if (passwordInput === '509077') {
+      setIsAdminAuthenticated(true);
       setShowPasswordModal(false);
+      setShowAdmin(true);
       setPasswordInput('');
-      // Also ensure user is logged in for Firebase rules (isAdmin check)
-      if (!auth.currentUser) {
-        const provider = new GoogleAuthProvider();
-        signInWithPopup(auth, provider).then(() => {
-          setIsAdminAuthenticated(true);
-          setShowAdmin(true);
-        }).catch(err => {
-          console.error("Auth failed:", err);
-          alert("يجب تسجيل الدخول بحساب المسؤول أولاً.");
-        });
-      } else {
-        setIsAdminAuthenticated(true);
-        setShowAdmin(true);
-      }
     } else {
-      alert("كلمة السر خاطئة!");
-      setPasswordInput('');
+      setErrorMessage("كلمة السر غير صحيحة");
+      setTimeout(() => setErrorMessage(null), 3000);
     }
   };
 
   return (
-    <div className="min-h-screen bg-[#0a0502] text-white font-sans selection:bg-orange-500/30 relative overflow-y-auto" dir="rtl">
-      {/* Atmospheric Background */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-[-10%] right-[-10%] w-[60%] h-[60%] bg-orange-900/20 rounded-full blur-[120px] animate-pulse" />
-        <div className="absolute bottom-[-10%] left-[-10%] w-[60%] h-[60%] bg-amber-900/10 rounded-full blur-[120px]" />
-      </div>
+    <div className="min-h-screen bg-[#0a0502] text-white font-sans selection:bg-orange-500/30 relative overflow-hidden flex items-center justify-center" dir="rtl">
+      <AnimatePresence>
+        {showSplash && <SplashScreen onComplete={() => setShowSplash(false)} />}
+      </AnimatePresence>
 
-      <main className="relative z-10 max-w-4xl mx-auto px-6 pt-12 pb-24 min-h-screen flex flex-col">
-        {/* Header */}
-        <header className="flex justify-between items-center mb-12 glass-panel p-4 rounded-3xl">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 bg-gradient-to-br from-orange-500 to-orange-700 rounded-2xl flex items-center justify-center shadow-lg shadow-orange-600/30 orange-glow">
-              <GraduationCap className="text-white" size={28} />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold tracking-tight text-glow">كلية التربية النوعية</h1>
-              <p className="text-[10px] text-orange-500 font-bold uppercase tracking-[0.2em]">جامعة كفر الشيخ</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <button 
-              onClick={handleAdminAuth}
-              className="px-5 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl text-xs font-semibold text-white/70 transition-all hover:scale-105 active:scale-95"
-            >
-              تحديث المساعد
-            </button>
-            <button className="p-2.5 hover:bg-white/5 rounded-2xl transition-all border border-transparent hover:border-white/10">
-              <Globe size={20} className="text-white/60" />
-            </button>
-          </div>
-        </header>
-
-        {/* Quick Navigation Bar */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-4 mb-8 no-scrollbar scroll-smooth">
-          <NavIcon 
-            icon={<Home size={20} />} 
-            label="الرئيسية" 
-            onClick={clearTranscript}
-          />
-          <NavIcon 
-            icon={<BookOpen size={20} />} 
-            label="الأقسام" 
-            onClick={() => handleQuickAction("كلمني عن الأقسام العلمية في الكلية")}
-          />
-          <NavIcon 
-            icon={<GraduationCap size={20} />} 
-            label="شؤون الطلاب" 
-            onClick={() => handleQuickAction("إيه هي خدمات شؤون الطلاب؟")}
-          />
-          <NavIcon 
-            icon={<Info size={20} />} 
-            label="الدراسات العليا" 
-            onClick={() => handleQuickAction("عايز أعرف عن الدراسات العليا")}
-          />
-          <NavIcon 
-            icon={<Phone size={20} />} 
-            label="اتصل بنا" 
-            onClick={() => handleQuickAction("إزاي أقدر أتواصل مع الكلية؟")}
-          />
-          <NavIcon 
-            icon={<Newspaper size={20} />} 
-            label="الأخبار" 
-            onClick={() => handleQuickAction("إيه آخر أخبار الكلية؟")}
-          />
-          <NavIcon 
-            icon={<Users size={20} />} 
-            label="عن الكلية" 
-            onClick={() => handleQuickAction("كلمني عن تاريخ الكلية ورؤيتها")}
-          />
+      {/* Mobile Frame Container */}
+      <div className="w-full h-full max-w-md bg-[#0a0502] relative overflow-hidden flex flex-col shadow-2xl md:rounded-[3rem] md:border-[8px] md:border-[#1a1a1a] md:h-[850px] md:my-8">
+        {/* Atmospheric Background */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute top-[-10%] right-[-10%] w-[100%] h-[60%] bg-orange-900/20 rounded-full blur-[120px] animate-pulse" />
+          <div className="absolute bottom-[-10%] left-[-10%] w-[100%] h-[60%] bg-amber-900/10 rounded-full blur-[120px]" />
         </div>
 
-        {/* Hero / Visualizer Section */}
-        <div className={`${isActive && transcript.length > 0 ? 'h-32' : 'flex-1'} flex flex-col items-center justify-center text-center transition-all duration-500`}>
-          {/* Status & Search Indicator */}
-          <div className="w-full max-w-xs flex items-center justify-between mb-6 px-4">
+        <main className="relative z-10 flex-1 flex flex-col overflow-hidden">
+          {/* Header */}
+          <header className="flex justify-between items-center p-6 bg-black/20 backdrop-blur-md border-b border-white/5">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-gradient-to-br from-orange-500 to-orange-700 rounded-xl flex items-center justify-center shadow-lg shadow-orange-600/30 orange-glow overflow-hidden">
+                <img src={LOGO_URL} alt="Logo" className="w-full h-full object-cover" onError={(e) => (e.target as any).style.display = 'none'} />
+                <GraduationCap className="text-white" size={20} />
+              </div>
+              <div>
+                <h1 className="text-sm font-bold tracking-tight text-glow">كلية التربية النوعية</h1>
+                <p className="text-[8px] text-orange-500 font-bold uppercase tracking-[0.1em]">جامعة كفر الشيخ</p>
+              </div>
+            </div>
             <div className="flex items-center gap-2">
-              <div className={`w-1.5 h-1.5 rounded-full ${status === 'active' ? 'bg-emerald-500 animate-pulse' : 'bg-white/20'}`} />
-              <span className="text-[9px] uppercase tracking-widest font-bold text-white/30">
-                {status === 'active' ? 'متصل' : 'غير متصل'}
-              </span>
+              <button 
+                onClick={handleAdminAuth}
+                className="p-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all"
+              >
+                <Users size={18} className="text-white/60" />
+              </button>
             </div>
-            {isSearching && (
-              <motion.div 
-                initial={{ opacity: 0, scale: 0.8 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="flex items-center gap-2 px-3 py-1 bg-orange-500/10 border border-orange-500/20 rounded-full"
-              >
-                <div className="w-2 h-2 border border-orange-500 border-t-transparent rounded-full animate-spin" />
-                <span className="text-[9px] text-orange-500 font-bold uppercase tracking-widest">جاري البحث في قاعدة البيانات...</span>
-              </motion.div>
-            )}
-          </div>
+          </header>
 
-          <AnimatePresence mode="wait">
-            {!isActive ? (
-              <motion.div
-                key="welcome"
-                initial={{ opacity: 0, y: 30 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95, filter: 'blur(10px)' }}
-                className="space-y-8"
-              >
-                <div className="space-y-2">
-                  <h2 className="text-6xl md:text-8xl font-black tracking-tighter leading-none text-glow">
-                    أهلاً بك في <br />
-                    <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-orange-600 italic">المساعد الذكي</span>
-                  </h2>
-                </div>
-                <p className="text-white/50 max-w-lg mx-auto text-xl font-medium leading-relaxed font-cairo">
-                  تحدث معي مباشرة للحصول على معلومات حول الأقسام، شؤون الطلاب، والدراسات العليا بكلية التربية النوعية.
-                </p>
-              </motion.div>
-            ) : (
-              <motion.div
-                key="active"
-                initial={{ opacity: 0, scale: 0.8, filter: 'blur(10px)' }}
-                animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
-                className="relative"
-              >
-                {/* Visualizer Orb - Smaller when transcript is present */}
-                <div className={`relative ${isActive && transcript.length > 0 ? 'w-40 h-40' : 'w-72 h-72 md:w-96 md:h-96'} transition-all duration-700 flex items-center justify-center`}>
-                  <motion.div
-                    animate={{
-                      scale: isSpeaking ? [1, 1.2, 1] : [1, 1.05, 1],
-                      opacity: isSpeaking ? [0.4, 0.8, 0.4] : [0.2, 0.5, 0.2],
-                    }}
-                    transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-                    className="absolute inset-0 bg-gradient-to-br from-orange-500 to-orange-800 rounded-full blur-3xl orange-glow"
-                  />
-                  <div className="relative z-10 w-full h-full border border-white/10 rounded-full flex items-center justify-center glass-panel overflow-hidden">
-                    {/* Animated particles inside orb */}
-                    <div className="absolute inset-0 opacity-30 pointer-events-none">
-                       {[...Array(5)].map((_, i) => (
-                         <motion.div
-                           key={i}
-                           animate={{
-                             x: [0, Math.random() * 100 - 50, 0],
-                             y: [0, Math.random() * 100 - 50, 0],
-                             scale: [1, 1.5, 1],
-                           }}
-                           transition={{ duration: 5 + i, repeat: Infinity }}
-                           className="absolute w-20 h-20 bg-orange-500/20 rounded-full blur-xl"
-                           style={{ left: `${Math.random() * 100}%`, top: `${Math.random() * 100}%` }}
-                         />
-                       ))}
-                    </div>
-                    
-                    <div className="flex gap-2 items-end h-1/2 relative z-20">
-                      {[...Array(isActive && transcript.length > 0 ? 8 : 16)].map((_, i) => (
-                        <motion.div
-                          key={i}
-                          animate={{
-                            height: isActive ? (isSpeaking ? [15, 60, 15] : [8, 25, 8]) : 8
-                          }}
-                          transition={{
-                            duration: 0.5,
-                            repeat: Infinity,
-                            delay: i * 0.04,
-                            ease: "easeInOut"
-                          }}
-                          className="w-2 bg-gradient-to-t from-orange-600 to-orange-300 rounded-full shadow-[0_0_10px_rgba(249,115,22,0.5)]"
-                        />
-                      ))}
-                    </div>
-                  </div>
-                </div>
-                
-                {/* Status Label */}
-                <motion.div 
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="mt-8"
-                >
-                  <p className="text-orange-500 text-xs font-bold tracking-[0.3em] uppercase animate-pulse font-cairo">
-                    {isSpeaking ? "المساعد يتحدث..." : "أنا أسمعك الآن..."}
-                  </p>
-                </motion.div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-
-        {/* Media Content Display */}
-        <AnimatePresence>
-          {mediaContent && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="mb-6 relative group"
-            >
-              <div className="bg-white/5 border border-white/10 rounded-3xl overflow-hidden shadow-2xl">
-                {mediaContent.type === 'image' ? (
-                  <img 
-                    src={mediaContent.url} 
-                    alt={mediaContent.title} 
-                    className="w-full h-48 md:h-64 object-cover"
-                    referrerPolicy="no-referrer"
-                  />
-                ) : (
-                  <video 
-                    src={mediaContent.url} 
-                    controls 
-                    autoPlay
-                    className="w-full h-48 md:h-64 object-cover"
-                  />
-                )}
-                <div className="p-4 bg-gradient-to-t from-black/80 to-transparent absolute bottom-0 left-0 right-0">
-                  <p className="text-sm font-medium text-white">{mediaContent.title}</p>
-                </div>
-                <button 
-                  onClick={() => setMediaContent(null)}
-                  className="absolute top-4 left-4 p-2 bg-black/50 hover:bg-black/80 rounded-full transition-colors"
-                >
-                  <MessageSquare size={16} />
-                </button>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Transcript Area */}
-        <div className="flex-1 px-4 py-6 space-y-6 custom-scrollbar">
-          <AnimatePresence initial={false}>
-            {transcript.map((item, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, y: 20, scale: 0.9, filter: 'blur(5px)' }}
-                animate={{ opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }}
-                className={`flex ${item.role === 'user' ? 'justify-end' : 'justify-start'}`}
-              >
-                <div className={`max-w-[85%] px-6 py-4 rounded-[2rem] text-base shadow-xl backdrop-blur-2xl border transition-all hover:scale-[1.02] ${
-                  item.role === 'user' 
-                    ? 'bg-orange-600/30 border-orange-500/40 text-orange-50 rounded-tr-none orange-glow' 
-                    : 'bg-white/10 border-white/20 text-white/90 rounded-tl-none'
-                }`}>
-                  <p className="leading-relaxed font-cairo font-medium">{item.text}</p>
-                </div>
-              </motion.div>
-            ))}
-          </AnimatePresence>
-          <div ref={transcriptEndRef} />
-        </div>
-
-        {/* Error Message Display */}
-        <AnimatePresence>
-          {errorMessage && (
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 10 }}
-              className="mb-8 p-6 bg-red-500/10 border border-red-500/20 rounded-3xl text-center space-y-4"
-            >
-              <p className="text-sm text-red-500 font-medium font-cairo">{errorMessage}</p>
-              <div className="flex justify-center gap-4">
-                <button 
-                  onClick={async () => {
-                    if (window.aistudio) {
-                      await window.aistudio.openSelectKey();
-                      setErrorMessage(null);
-                      toggleSession();
-                    }
-                  }}
-                  className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-500 text-[10px] font-bold rounded-xl transition-all uppercase tracking-widest"
-                >
-                  إصلاح الاتصال / اختيار مفتاح جديد
-                </button>
-                <button 
-                  onClick={() => setErrorMessage(null)}
-                  className="px-4 py-2 bg-white/5 hover:bg-white/10 text-white/40 hover:text-white/60 text-[10px] font-bold rounded-xl transition-all uppercase tracking-widest"
-                >
-                  إغلاق
-                </button>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Controls */}
-        <div className="mt-auto flex flex-col items-center gap-8">
-          <button
-            onClick={toggleSession}
-            disabled={status === 'connecting'}
-            className={`group relative w-20 h-20 rounded-full flex items-center justify-center transition-all duration-500 ${
-              isActive 
-                ? 'bg-white text-black scale-110 shadow-[0_0_50px_rgba(255,255,255,0.3)]' 
-                : 'bg-orange-600 text-white hover:scale-105 shadow-[0_0_30px_rgba(234,88,12,0.3)]'
-            } disabled:opacity-50`}
-          >
-            {status === 'connecting' ? (
-              <motion.div
-                animate={{ rotate: 360 }}
-                transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                className="w-8 h-8 border-2 border-current border-t-transparent rounded-full"
+          {/* Main Content Area */}
+          <div className="flex-1 overflow-y-auto custom-scrollbar px-6 py-4 flex flex-col">
+            {/* Quick Navigation Bar */}
+            <div className="flex items-center gap-2 overflow-x-auto pb-4 mb-6 no-scrollbar scroll-smooth">
+              <NavIcon 
+                icon={<Home size={18} />} 
+                label="الرئيسية" 
+                onClick={clearTranscript}
               />
-            ) : isActive ? (
-              <MicOff size={32} />
-            ) : (
-              <Mic size={32} />
-            )}
-            
-            {/* Pulsing ring when active */}
-            {isActive && (
-              <motion.div
-                initial={{ scale: 1, opacity: 0.5 }}
-                animate={{ scale: 1.5, opacity: 0 }}
-                transition={{ duration: 1.5, repeat: Infinity }}
-                className="absolute inset-0 rounded-full border-2 border-white"
-              />
-            )}
-          </button>
-
-          <div className="w-full space-y-4">
-            <div className="flex items-center gap-3 px-2">
-              <Sparkles size={14} className="text-orange-500" />
-              <span className="text-[10px] font-bold text-white/30 uppercase tracking-widest font-cairo">اقتراحات سريعة</span>
-              <div className="flex-1 h-px bg-white/5" />
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full">
-              <QuickAction 
+              <NavIcon 
                 icon={<BookOpen size={18} />} 
                 label="الأقسام" 
                 onClick={() => handleQuickAction("كلمني عن الأقسام العلمية في الكلية")}
               />
-              <QuickAction 
+              <NavIcon 
                 icon={<GraduationCap size={18} />} 
                 label="شؤون الطلاب" 
                 onClick={() => handleQuickAction("إيه هي خدمات شؤون الطلاب؟")}
               />
-              <QuickAction 
+              <NavIcon 
                 icon={<Info size={18} />} 
                 label="الدراسات العليا" 
                 onClick={() => handleQuickAction("عايز أعرف عن الدراسات العليا")}
               />
-              <QuickAction 
-                icon={<Phone size={18} />} 
-                label="اتصل بنا" 
-                onClick={() => handleQuickAction("إزاي أقدر أتواصل مع الكلية؟")}
-              />
+            </div>
+
+            {/* Hero / Visualizer Section */}
+            <div className={`${isActive && transcript.length > 0 ? 'h-24' : 'flex-1'} flex flex-col items-center justify-center text-center transition-all duration-500`}>
+              <AnimatePresence mode="wait">
+                {!isActive ? (
+                  <motion.div
+                    key="welcome"
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    className="space-y-6"
+                  >
+                    <div className="space-y-2">
+                      <h2 className="text-4xl font-black tracking-tighter leading-none text-glow">
+                        أهلاً بك في <br />
+                        <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-orange-600 italic">المساعد الذكي</span>
+                      </h2>
+                    </div>
+                    <p className="text-white/50 max-w-xs mx-auto text-sm font-medium leading-relaxed font-cairo">
+                      تحدث معي مباشرة للحصول على معلومات حول الكلية.
+                    </p>
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key="active"
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="relative"
+                  >
+                    <div className={`relative ${isActive && transcript.length > 0 ? 'w-32 h-32' : 'w-56 h-56'} transition-all duration-700 flex items-center justify-center`}>
+                      <motion.div
+                        animate={{
+                          scale: isSpeaking ? [1, 1.2, 1] : [1, 1.05, 1],
+                          opacity: isSpeaking ? [0.4, 0.8, 0.4] : [0.2, 0.5, 0.2],
+                        }}
+                        transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+                        className="absolute inset-0 bg-gradient-to-br from-orange-500 to-orange-800 rounded-full blur-2xl orange-glow"
+                      />
+                      <div className="relative z-10 w-full h-full border border-white/10 rounded-full flex items-center justify-center glass-panel overflow-hidden">
+                        <div className="flex gap-1.5 items-end h-1/2 relative z-20">
+                          {[...Array(isActive && transcript.length > 0 ? 6 : 12)].map((_, i) => (
+                            <motion.div
+                              key={i}
+                              animate={{
+                                height: isActive ? (isSpeaking ? [10, 40, 10] : [5, 15, 5]) : 5
+                              }}
+                              transition={{
+                                duration: 0.5,
+                                repeat: Infinity,
+                                delay: i * 0.04,
+                                ease: "easeInOut"
+                              }}
+                              className="w-1.5 bg-gradient-to-t from-orange-600 to-orange-300 rounded-full"
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
+            {/* Media Content Display */}
+            <AnimatePresence>
+              {mediaContent.length > 0 && (
+                <div className="mb-6 space-y-4">
+                  {mediaContent.map((item, idx) => (
+                    <motion.div
+                      key={`${item.url}-${idx}`}
+                      initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                      className="relative"
+                    >
+                      <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden shadow-xl">
+                        {item.type === 'image' ? (
+                          <img 
+                            src={item.url} 
+                            alt={item.title} 
+                            className="w-full h-40 object-cover"
+                            referrerPolicy="no-referrer"
+                          />
+                        ) : (
+                          <video 
+                            src={item.url} 
+                            controls 
+                            autoPlay
+                            className="w-full h-40 object-cover"
+                          />
+                        )}
+                        <div className="p-3 bg-black/60 backdrop-blur-sm flex justify-between items-center">
+                          <p className="text-xs font-medium text-white">{item.title}</p>
+                          <button 
+                            onClick={() => setMediaContent(prev => prev.filter((_, i) => i !== idx))}
+                            className="p-1.5 bg-white/10 hover:bg-white/20 rounded-full"
+                          >
+                            <RefreshCcw size={12} className="rotate-45" />
+                          </button>
+                        </div>
+                      </div>
+                    </motion.div>
+                  ))}
+                  {mediaContent.length > 0 && (
+                    <button 
+                      onClick={() => setMediaContent([])}
+                      className="w-full py-2 text-[10px] text-white/40 hover:text-white/60 uppercase tracking-widest font-bold transition-colors"
+                    >
+                      إغلاق كل الوسائط
+                    </button>
+                  )}
+                </div>
+              )}
+            </AnimatePresence>
+
+            {/* Transcript Area */}
+            <div className="flex-1 py-4 space-y-4">
+              <AnimatePresence initial={false}>
+                {transcript.map((item, i) => (
+                  <motion.div
+                    key={i}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className={`flex ${item.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                  >
+                    <div className={`max-w-[90%] px-4 py-3 rounded-2xl text-sm shadow-lg backdrop-blur-xl border ${
+                      item.role === 'user' 
+                        ? 'bg-orange-600/30 border-orange-500/40 text-orange-50 rounded-tr-none' 
+                        : 'bg-white/10 border-white/20 text-white/90 rounded-tl-none'
+                    }`}>
+                      <p className="leading-relaxed font-cairo">{item.text}</p>
+                    </div>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+              <div ref={transcriptEndRef} />
             </div>
           </div>
-        </div>
-        {/* Footer Signature */}
-        <footer className="mt-12 py-8 border-t border-white/5 text-center">
-          <p className="text-[10px] font-bold text-white/20 uppercase tracking-[0.3em] font-cairo">
-            by ibrahim Elkhooly 2026©
-          </p>
-        </footer>
-      </main>
+
+          {/* Bottom Controls Area */}
+          <div className="p-6 bg-gradient-to-t from-black to-transparent space-y-6">
+            {/* Error Message Display */}
+            <AnimatePresence>
+              {errorMessage && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 10 }}
+                  className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-center"
+                >
+                  <p className="text-[10px] text-red-500 font-medium font-cairo">{errorMessage}</p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            <div className="flex flex-col items-center gap-6">
+              <button
+                onClick={toggleSession}
+                disabled={status === 'connecting'}
+                className={`group relative w-16 h-16 rounded-full flex items-center justify-center transition-all duration-500 ${
+                  isActive 
+                    ? 'bg-white text-black scale-110 shadow-[0_0_30px_rgba(255,255,255,0.3)]' 
+                    : 'bg-orange-600 text-white hover:scale-105 shadow-[0_0_20px_rgba(234,88,12,0.3)]'
+                } disabled:opacity-50`}
+              >
+                {status === 'connecting' ? (
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                    className="w-6 h-6 border-2 border-current border-t-transparent rounded-full"
+                  />
+                ) : isActive ? (
+                  <MicOff size={28} />
+                ) : (
+                  <Mic size={28} />
+                )}
+                
+                {isActive && (
+                  <motion.div
+                    initial={{ scale: 1, opacity: 0.5 }}
+                    animate={{ scale: 1.4, opacity: 0 }}
+                    transition={{ duration: 1.5, repeat: Infinity }}
+                    className="absolute inset-0 rounded-full border-2 border-white"
+                  />
+                )}
+              </button>
+
+              <div className="w-full flex justify-around items-center bg-white/5 backdrop-blur-md rounded-2xl p-2 border border-white/5">
+                <BottomNavIcon icon={<Home size={20} />} label="الرئيسية" active={!isActive} onClick={clearTranscript} />
+                <BottomNavIcon icon={<BookOpen size={20} />} label="الأقسام" onClick={() => handleQuickAction("كلمني عن الأقسام العلمية")} />
+                <BottomNavIcon icon={<Users size={20} />} label="الإدارة" onClick={handleAdminAuth} />
+                <BottomNavIcon icon={<Phone size={20} />} label="تواصل" onClick={() => handleQuickAction("إزاي أتواصل معاكم؟")} />
+              </div>
+              
+              <div className="mt-2 text-center">
+                <p className="text-[10px] text-white/20 font-medium tracking-widest uppercase">Developed by Ibrahim Elkhooly</p>
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
 
       {/* Password Modal */}
       <AnimatePresence>
@@ -877,16 +858,26 @@ export default function App() {
   );
 }
 
+function BottomNavIcon({ icon, label, active, onClick }: { icon: React.ReactNode, label: string, active?: boolean, onClick: () => void }) {
+  return (
+    <button 
+      onClick={onClick}
+      className={`flex flex-col items-center gap-1 p-2 transition-all ${active ? 'text-orange-500' : 'text-white/40 hover:text-white/60'}`}
+    >
+      {icon}
+      <span className="text-[8px] font-bold font-cairo">{label}</span>
+    </button>
+  );
+}
+
 function NavIcon({ icon, label, onClick }: { icon: React.ReactNode, label: string, onClick: () => void }) {
   return (
     <button 
       onClick={onClick}
-      className="flex flex-col items-center gap-2 p-3 min-w-[90px] hover:bg-white/5 rounded-2xl transition-all group border border-transparent hover:border-white/10"
+      className="flex flex-col items-center gap-2 min-w-[70px] p-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl transition-all hover:scale-105 active:scale-95"
     >
-      <div className="w-12 h-12 bg-white/5 rounded-2xl flex items-center justify-center text-white/40 group-hover:bg-orange-500/20 group-hover:text-orange-500 transition-all duration-300">
-        {icon}
-      </div>
-      <span className="text-[10px] font-bold text-white/30 group-hover:text-white/80 transition-colors font-cairo text-center whitespace-nowrap">{label}</span>
+      <div className="text-orange-500">{icon}</div>
+      <span className="text-[9px] font-bold text-white/60 font-cairo">{label}</span>
     </button>
   );
 }
@@ -895,10 +886,12 @@ function QuickAction({ icon, label, onClick }: { icon: React.ReactNode, label: s
   return (
     <button 
       onClick={onClick}
-      className="flex flex-col items-center gap-3 p-5 glass-panel rounded-[2rem] transition-all group hover:bg-white/10 hover:scale-105 active:scale-95 hover:border-orange-500/50"
+      className="flex items-center gap-3 p-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl transition-all hover:scale-[1.02] active:scale-[0.98] text-right"
     >
-      <div className="text-orange-500 group-hover:scale-125 transition-transform duration-300 group-hover:text-orange-400">{icon}</div>
-      <span className="text-[11px] font-bold uppercase tracking-[0.15em] text-white/40 group-hover:text-white/80 transition-colors font-cairo">{label}</span>
+      <div className="p-2 bg-orange-500/10 rounded-xl text-orange-500">
+        {icon}
+      </div>
+      <span className="text-xs font-bold text-white/80 font-cairo">{label}</span>
     </button>
   );
 }
@@ -1025,9 +1018,9 @@ function FileProcessor({ onComplete, onError }: { onComplete: () => void, onErro
     if (files.length === 0) return;
     setProcessing(true);
     
-    const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
+    const apiKey = HARDCODED_API_KEY || process.env.API_KEY || process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      onError("مفتاح API مفقود. لا يمكن معالجة الملفات.");
+      onError("مفتاح API مفقود. يرجى وضعه في الكود أولاً.");
       setProcessing(false);
       return;
     }

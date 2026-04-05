@@ -76,25 +76,41 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
 export async function getMediaByQuery(searchQuery: string) {
   const path = 'media';
   try {
-    const q = query(
-      collection(db, path),
-      where('queryKey', '>=', searchQuery),
-      where('queryKey', '<=', searchQuery + '\uf8ff'),
-      limit(1)
-    );
-    const snapshot = await getDocs(q);
-    if (!snapshot.empty) {
-      return snapshot.docs[0].data();
+    const searchTerms = searchQuery.toLowerCase().split(/\s+/).filter(t => t.length > 1);
+    
+    // Fetch all docs to perform fuzzy search client-side
+    const allSnapshot = await getDocs(collection(db, path));
+    const allDocs = allSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() as any }));
+    
+    // Score matches
+    const scoredMatches = allDocs.map(doc => {
+      let score = 0;
+      const queryKey = (doc.queryKey || "").toLowerCase();
+      const title = (doc.title || "").toLowerCase();
+      const desc = (doc.description || "").toLowerCase();
+      const queryLower = searchQuery.toLowerCase();
+      
+      if (queryKey === queryLower) score += 100;
+      else if (queryKey.includes(queryLower)) score += 50;
+      
+      if (title === queryLower) score += 80;
+      else if (title.includes(queryLower)) score += 40;
+      
+      searchTerms.forEach(term => {
+        if (queryKey.includes(term)) score += 20;
+        if (title.includes(term)) score += 15;
+        if (desc.includes(term)) score += 5;
+      });
+      
+      return { doc, score };
+    }).filter(m => m.score > 15);
+
+    if (scoredMatches.length > 0) {
+      scoredMatches.sort((a, b) => b.score - a.score);
+      return scoredMatches.slice(0, 3).map(m => m.doc);
     }
     
-    // Fallback: fetch all and filter client-side
-    const allSnapshot = await getDocs(collection(db, path));
-    const found = allSnapshot.docs.find(doc => {
-      const data = doc.data();
-      return data.queryKey.toLowerCase().includes(searchQuery.toLowerCase()) ||
-             data.title.toLowerCase().includes(searchQuery.toLowerCase());
-    });
-    return found ? found.data() : null;
+    return null;
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, path);
     return null;
@@ -147,62 +163,75 @@ export async function deleteCollegeInfoByCategory(category: string) {
 export async function getCollegeInfoByCategory(category: string) {
   const path = 'college_info';
   try {
-    // Try exact match first (prefix search)
     const q = query(
       collection(db, path),
-      where('category', '>=', category),
-      where('category', '<=', category + '\uf8ff')
+      where('category', '==', category)
     );
     const snapshot = await getDocs(q);
+    if (snapshot.empty) return null;
     
-    if (!snapshot.empty) {
-      // Group by category to find the best match
-      const grouped: Record<string, any[]> = {};
-      snapshot.docs.forEach(d => {
-        const data = d.data();
-        if (!grouped[data.category]) grouped[data.category] = [];
-        grouped[data.category].push(data);
-      });
+    const docs = snapshot.docs.map(d => d.data());
+    // Sort by chunkIndex if it exists
+    docs.sort((a, b) => (a.chunkIndex || 0) - (b.chunkIndex || 0));
+    
+    return {
+      category,
+      content: docs.map(d => d.content).join('\n')
+    };
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, path);
+    return null;
+  }
+}
 
-      // Pick the category that matches best (shortest name or exact match)
-      const bestCategory = Object.keys(grouped).sort((a, b) => a.length - b.length)[0];
-      const docs = grouped[bestCategory];
-      
-      // Sort by chunkIndex to maintain order
-      docs.sort((a, b) => (a.chunkIndex || 0) - (b.chunkIndex || 0));
-      return {
-        category: bestCategory,
-        content: docs.map(d => d.content).join('\n')
-      };
-    }
-
-    // Fallback: fetch all and filter client-side
+// Function to fetch college info by query
+export async function getCollegeInfoByQuery(searchQuery: string) {
+  const path = 'college_info';
+  try {
+    const searchTerms = searchQuery.toLowerCase().split(/\s+/).filter(t => t.length > 1);
+    
+    // Fetch all docs to perform fuzzy search client-side (Firestore doesn't support full-text search)
     const allSnapshot = await getDocs(collection(db, path));
-    const matches = allSnapshot.docs
-      .map(doc => ({ id: doc.id, ...doc.data() as any }))
-      .filter(data => 
-        data.category.toLowerCase().includes(category.toLowerCase()) ||
-        data.content.toLowerCase().includes(category.toLowerCase())
-      );
-
-    if (matches.length > 0) {
-      // Group by category and sort by chunkIndex
-      const grouped: Record<string, any[]> = {};
-      matches.forEach(curr => {
-        if (!grouped[curr.category]) grouped[curr.category] = [];
-        grouped[curr.category].push(curr);
-        return grouped;
+    const allDocs = allSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() as any }));
+    
+    // Score matches
+    const categoryScores: Record<string, number> = {};
+    
+    allDocs.forEach(doc => {
+      let score = 0;
+      const cat = (doc.category || "").toLowerCase();
+      const cont = (doc.content || "").toLowerCase();
+      const queryLower = searchQuery.toLowerCase();
+      
+      if (cat === queryLower) score += 100;
+      else if (cat.includes(queryLower)) score += 50;
+      
+      searchTerms.forEach(term => {
+        if (cat.includes(term)) score += 30;
+        if (cont.includes(term)) score += 10;
       });
       
-      // Pick the best matching category (first one for now)
-      const bestCategory = Object.keys(grouped)[0];
-      const docs = grouped[bestCategory];
-      docs.sort((a: any, b: any) => (a.chunkIndex || 0) - (b.chunkIndex || 0));
-      
-      return {
-        category: bestCategory,
-        content: docs.map((d: any) => d.content).join('\n')
-      };
+      if (score > 0) {
+        categoryScores[doc.category] = Math.max(categoryScores[doc.category] || 0, score);
+      }
+    });
+
+    const sortedCategories = Object.entries(categoryScores)
+      .sort(([, a], [, b]) => b - a)
+      .filter(([, score]) => score > 15) // Threshold for relevance
+      .slice(0, 3); // Top 3 matching categories
+
+    if (sortedCategories.length > 0) {
+      const results = sortedCategories.map(([category]) => {
+        const categoryDocs = allDocs.filter(d => d.category === category);
+        categoryDocs.sort((a, b) => (a.chunkIndex || 0) - (b.chunkIndex || 0));
+        return {
+          category,
+          content: categoryDocs.map(d => d.content).join('\n')
+        };
+      });
+
+      return results;
     }
     return null;
   } catch (error) {
