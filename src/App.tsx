@@ -310,18 +310,32 @@ export default function App() {
               }
             }
 
-            // Handle model transcription
-            const modelParts = message.serverContent?.modelTurn?.parts;
-            if (modelParts) {
-              const modelText = modelParts.map(p => p.text).filter(Boolean).join(' ');
-              if (modelText.trim()) {
-                setTranscript(prev => {
-                  // If last message was model, we might be getting more parts of the same turn
-                  // But usually Live API sends chunks. Let's just append for now but keep more history.
-                  return [...prev.slice(-10), { role: 'model', text: modelText }];
-                });
-              }
-            }
+            // Handle model transcription - الرد المصحح لدمج النصوص
+const modelParts = message.serverContent?.modelTurn?.parts;
+if (modelParts) {
+  const modelText = modelParts.map(p => p.text).filter(Boolean).join(''); // استخدمنا '' بدلاً من ' ' لمنع الفراغات الزائدة بين الحروف العربية
+  
+  if (modelText.trim()) {
+    setTranscript(prev => {
+      // الحصول على آخر رسالة في المحادثة
+      const lastMessage = prev.length > 0 ? prev[prev.length - 1] : null;
+
+      // إذا كانت آخر رسالة هي من الـ model، قم بتحديث نصها بدلاً من إضافة رسالة جديدة
+      if (lastMessage && lastMessage.role === 'model') {
+        const updatedTranscript = [...prev];
+        updatedTranscript[updatedTranscript.length - 1] = {
+          ...lastMessage,
+          text: lastMessage.text + modelText // دمج النص الجديد مع النص القديم
+        };
+        return updatedTranscript;
+      }
+
+      // إذا كانت أول كلمة في الرد أو كان الرد السابق للمستخدم، أضف رسالة جديدة
+      return [...prev.slice(-10), { role: 'model', text: modelText }];
+    });
+  }
+}
+
 
             // Handle user transcription
             const userText = message.serverContent?.inputTranscription?.text;
