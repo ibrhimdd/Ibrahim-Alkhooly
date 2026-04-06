@@ -337,18 +337,27 @@ if (modelParts) {
 }
 
 
-            // Handle user transcription
+                        // Handle user transcription - المعدل لمنع التقطيع
             const userText = message.serverContent?.inputTranscription?.text;
             if (userText) {
               setTranscript(prev => {
-                // Avoid duplicate user transcripts
-                if (prev.length > 0 && prev[prev.length - 1].role === 'user' && prev[prev.length - 1].text === userText) {
-                  return prev;
+                const lastMessage = prev.length > 0 ? prev[prev.length - 1] : null;
+
+                // إذا كانت آخر رسالة هي كلام المستخدم (user)، حدث نصها فقط
+                if (lastMessage && lastMessage.role === 'user') {
+                  const updatedTranscript = [...prev];
+                  updatedTranscript[updatedTranscript.length - 1] = {
+                    ...lastMessage,
+                    text: userText // التحديث للنص الكامل الواصل حالياً
+                  };
+                  return updatedTranscript;
                 }
+
+                // إذا كانت رسالة جديدة (أول مرة يتكلم)
                 return [...prev.slice(-10), { role: 'user', text: userText }];
               });
             }
-          },
+
           onerror: (error: any) => {
             console.error("Live API Error:", error);
             setStatus('error');
