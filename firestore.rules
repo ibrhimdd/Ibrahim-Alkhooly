@@ -22,6 +22,13 @@ service cloud.firestore {
     //   - chunkIndex: number (optional)
     //   - totalChunks: number (optional)
     //
+    // Collection: questions_cache
+    // Fields:
+    //   - question: string (required)
+    //   - answer: string (required)
+    //   - timestamp: timestamp (optional)
+    //   - count: number (optional)
+    //
     // ===============================================================
 
     // Helper Functions
@@ -64,6 +71,13 @@ service cloud.firestore {
     match /college_info/{infoId} {
       allow read: if true;
       allow create, update: if isAdmin() && isValidInfo(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /questions_cache/{cacheId} {
+      allow read: if true;
+      allow create: if true; // Allow assistant to save new Q&A
+      allow update: if true; // Allow assistant to update count
       allow delete: if isAdmin();
     }
   }

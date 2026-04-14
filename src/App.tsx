@@ -21,8 +21,31 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AudioHandler } from './utils/audio';
-import { SYSTEM_INSTRUCTION, MODEL_NAME, GET_MEDIA_CONTENT_TOOL, GET_COLLEGE_INFO_TOOL } from './constants';
-import { getMediaByQuery, addMedia, addCollegeInfo, auth, getCollegeInfoByQuery, getAllMedia, getAllCollegeInfo, updateMedia, deleteMedia, updateCollegeInfo, deleteCollegeInfo, deleteCollegeInfoByCategory } from './firebase';
+import { 
+  SYSTEM_INSTRUCTION, 
+  MODEL_NAME, 
+  GET_MEDIA_CONTENT_TOOL, 
+  GET_COLLEGE_INFO_TOOL,
+  GET_CACHED_ANSWER_TOOL,
+  SAVE_QUESTION_ANSWER_TOOL
+} from './constants';
+import { 
+  getMediaByQuery, 
+  addMedia, 
+  addCollegeInfo, 
+  auth, 
+  getCollegeInfoByQuery, 
+  getAllMedia, 
+  getAllCollegeInfo, 
+  updateMedia, 
+  deleteMedia, 
+  updateCollegeInfo, 
+  deleteCollegeInfo, 
+  getCachedQuestion,
+  addCachedQuestion,
+  getAllCachedQuestions,
+  deleteCachedQuestion
+} from './firebase';
 import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import * as pdfjsLib from 'pdfjs-dist';
 import mammoth from 'mammoth';
@@ -106,8 +129,9 @@ export default function App() {
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [passwordInput, setPasswordInput] = useState('');
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
-  const [adminTab, setAdminTab] = useState<'media' | 'info' | 'files'>('media');
+  const [adminTab, setAdminTab] = useState<'media' | 'info' | 'files' | 'stats'>('media');
   const [refreshKey, setRefreshKey] = useState(0);
+  const [user, setUser] = useState<any>(null);
   
   const [editingMedia, setEditingMedia] = useState<any>(null);
   const [editingInfo, setEditingInfo] = useState<any>(null);
@@ -124,6 +148,11 @@ export default function App() {
       setHasApiKey(true);
     };
     checkApiKey();
+
+    const unsubscribe = auth.onAuthStateChanged((u) => {
+      setUser(u);
+    });
+    return () => unsubscribe();
   }, []);
 
   const handleSelectKey = async () => {
@@ -185,7 +214,7 @@ export default function App() {
       } catch (audioError: any) {
         console.error("Microphone access error:", audioError);
         if (audioError.name === 'NotAllowedError' || audioError.message?.includes('Permission denied')) {
-          setErrorMessage("يرجى السماح بالوصول إلى الميكروفون من إعدادات المتصفح للمتابعة. اضغط على أيقونة القفل بجانب شريط العنوان وتأكد من تفعيل الميكروفون.");
+          setErrorMessage("يرجى السماح بالوصول إلى الميكروفون من إعدادات المتصفح للمتابعة. إذا كنت تستخدم التطبيق داخل نافذة المعاينة، جرب فتحه في نافذة جديدة (Open in new tab) لضمان عمل الميكروفون بشكل صحيح.");
         } else if (audioError.name === 'NotFoundError') {
           setErrorMessage("لم يتم العثور على ميكروفون متصل. يرجى التأكد من توصيل الميكروفون.");
         } else {
@@ -217,7 +246,12 @@ export default function App() {
           outputAudioTranscription: {},
           tools: [
             { googleSearch: {} },
-            { functionDeclarations: [GET_MEDIA_CONTENT_TOOL as any, GET_COLLEGE_INFO_TOOL as any] }
+            { functionDeclarations: [
+              GET_MEDIA_CONTENT_TOOL as any, 
+              GET_COLLEGE_INFO_TOOL as any,
+              GET_CACHED_ANSWER_TOOL as any,
+              SAVE_QUESTION_ANSWER_TOOL as any
+            ] }
           ] as any,
         },
         callbacks: {
@@ -306,58 +340,60 @@ export default function App() {
                     console.error("Error in get_college_info tool:", err);
                     setIsSearching(false);
                   });
+                } else if (call.name === "get_cached_answer") {
+                  const question = (call.args as any).question;
+                  console.log("Executing Tool: get_cached_answer for", question);
+                  getCachedQuestion(question).then(async (data) => {
+                    let resultMsg = "لم يتم العثور على إجابة سابقة لهذا السؤال.";
+                    if (data) {
+                      resultMsg = `تم العثور على إجابة سابقة: ${data.answer}`;
+                    }
+                    const session = await sessionPromise;
+                    session.sendToolResponse({
+                      functionResponses: [{
+                        name: "get_cached_answer",
+                        id: call.id,
+                        response: { result: resultMsg }
+                      }]
+                    });
+                  });
+                } else if (call.name === "save_question_answer") {
+                  const { question, answer } = call.args as any;
+                  console.log("Executing Tool: save_question_answer");
+                  addCachedQuestion(question, answer).then(async () => {
+                    const session = await sessionPromise;
+                    session.sendToolResponse({
+                      functionResponses: [{
+                        name: "save_question_answer",
+                        id: call.id,
+                        response: { result: "تم حفظ السؤال والإجابة بنجاح في الإحصائيات." }
+                      }]
+                    });
+                  });
                 }
               }
             }
 
-            // Handle model transcription - الرد المصحح لدمج النصوص
-const modelParts = message.serverContent?.modelTurn?.parts;
-if (modelParts) {
-  const modelText = modelParts.map(p => p.text).filter(Boolean).join(''); // استخدمنا '' بدلاً من ' ' لمنع الفراغات الزائدة بين الحروف العربية
-  
-  if (modelText.trim()) {
-    setTranscript(prev => {
-      // الحصول على آخر رسالة في المحادثة
-      const lastMessage = prev.length > 0 ? prev[prev.length - 1] : null;
-
-      // إذا كانت آخر رسالة هي من الـ model، قم بتحديث نصها بدلاً من إضافة رسالة جديدة
-      if (lastMessage && lastMessage.role === 'model') {
-        const updatedTranscript = [...prev];
-        updatedTranscript[updatedTranscript.length - 1] = {
-          ...lastMessage,
-          text: lastMessage.text + modelText // دمج النص الجديد مع النص القديم
-        };
-        return updatedTranscript;
-      }
-
-      // إذا كانت أول كلمة في الرد أو كان الرد السابق للمستخدم، أضف رسالة جديدة
-      return [...prev.slice(-10), { role: 'model', text: modelText }];
-    });
-  }
-}
-
-
-                        // Handle user transcription - المعدل لمنع التقطيع
-            const userText = message.serverContent?.inputTranscription?.text;
-            if (userText) {
-              setTranscript(prev => {
-                const lastMessage = prev.length > 0 ? prev[prev.length - 1] : null;
-
-                // إذا كانت آخر رسالة هي كلام المستخدم (user)، حدث نصها فقط
-                if (lastMessage && lastMessage.role === 'user') {
-                  const updatedTranscript = [...prev];
-                  updatedTranscript[updatedTranscript.length - 1] = {
-                    ...lastMessage,
-                    text: userText // التحديث للنص الكامل الواصل حالياً
-                  };
-                  return updatedTranscript;
-                }
-
-                // إذا كانت رسالة جديدة (أول مرة يتكلم)
-                return [...prev.slice(-10), { role: 'user', text: userText }];
-              });
+            // Handle model transcription
+            const modelParts = message.serverContent?.modelTurn?.parts;
+            if (modelParts) {
+              const modelText = modelParts.map(p => p.text).filter(Boolean).join(' ');
+              if (modelText.trim()) {
+                setTranscript(prev => {
+                  // If last message was model, we might be getting more parts of the same turn
+                  // But usually Live API sends chunks. Let's just append for now but keep more history.
+                  return [...prev.slice(-10), { role: 'model', text: modelText }];
+                });
+              }
             }
 
+            // Handle user transcription
+            const userText = message.serverContent?.inputTranscription?.text;
+            if (userText) {
+              console.log("User said:", userText);
+              // We don't add to transcript state as requested by user
+            }
+          },
           onerror: (error: any) => {
             console.error("Live API Error:", error);
             setStatus('error');
@@ -637,13 +673,9 @@ if (modelParts) {
                     key={i}
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className={`flex ${item.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                    className="flex justify-start"
                   >
-                    <div className={`max-w-[90%] px-4 py-3 rounded-2xl text-sm shadow-lg backdrop-blur-xl border ${
-                      item.role === 'user' 
-                        ? 'bg-orange-600/30 border-orange-500/40 text-orange-50 rounded-tr-none' 
-                        : 'bg-white/10 border-white/20 text-white/90 rounded-tl-none'
-                    }`}>
+                    <div className="max-w-[90%] px-4 py-3 rounded-2xl text-sm shadow-lg backdrop-blur-xl border bg-white/10 border-white/20 text-white/90 rounded-tl-none">
                       <p className="leading-relaxed font-cairo">{item.text}</p>
                     </div>
                   </motion.div>
@@ -812,10 +844,49 @@ if (modelParts) {
                 >
                   الملفات
                 </button>
+                <button 
+                  onClick={() => setAdminTab('stats')}
+                  className={`flex-1 py-3 text-sm font-bold rounded-xl transition-all font-cairo ${adminTab === 'stats' ? 'bg-orange-600 text-white shadow-lg shadow-orange-600/20' : 'text-white/40 hover:text-white/60'}`}
+                >
+                  الإحصائيات
+                </button>
               </div>
 
               <div className="p-8 overflow-y-auto custom-scrollbar flex-1">
-                {adminTab === 'media' ? (
+                {!user ? (
+                  <div className="flex flex-col items-center justify-center py-20 space-y-6 text-center">
+                    <div className="w-16 h-16 bg-orange-500/10 rounded-full flex items-center justify-center text-orange-500">
+                      <Users size={32} />
+                    </div>
+                    <div className="space-y-2">
+                      <h4 className="text-xl font-bold">تسجيل الدخول مطلوب</h4>
+                      <p className="text-sm text-white/40 max-w-xs">يجب تسجيل الدخول باستخدام حساب المسؤول لتتمكن من تعديل البيانات.</p>
+                    </div>
+                    <button 
+                      onClick={() => signInWithPopup(auth, new GoogleAuthProvider())}
+                      className="px-8 py-4 bg-white text-black rounded-2xl font-bold hover:bg-orange-500 hover:text-white transition-all flex items-center gap-3"
+                    >
+                      <Globe size={20} />
+                      تسجيل الدخول باستخدام Google
+                    </button>
+                  </div>
+                ) : user.email !== "ibrahimalkhooly@gmail.com" ? (
+                  <div className="flex flex-col items-center justify-center py-20 space-y-6 text-center">
+                    <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center text-red-500">
+                      <MicOff size={32} />
+                    </div>
+                    <div className="space-y-2">
+                      <h4 className="text-xl font-bold">غير مصرح لك</h4>
+                      <p className="text-sm text-white/40 max-w-xs">عذراً، هذا الحساب ({user.email}) ليس لديه صلاحيات المسؤول.</p>
+                    </div>
+                    <button 
+                      onClick={() => auth.signOut()}
+                      className="px-8 py-4 bg-white/5 hover:bg-white/10 rounded-2xl font-bold transition-all"
+                    >
+                      تسجيل الخروج
+                    </button>
+                  </div>
+                ) : adminTab === 'media' ? (
                   <div className="space-y-12">
                     <section>
                       <h4 className="text-sm font-bold text-white/20 uppercase tracking-widest mb-6">
@@ -861,7 +932,7 @@ if (modelParts) {
                       <InfoList refreshKey={refreshKey} onEdit={setEditingInfo} />
                     </section>
                   </div>
-                ) : (
+                ) : adminTab === 'files' ? (
                   <div className="space-y-12">
                     <section>
                       <h4 className="text-sm font-bold text-white/20 uppercase tracking-widest mb-6">معالجة الملفات الذكية (PDF/Word)</h4>
@@ -869,6 +940,16 @@ if (modelParts) {
                         onComplete={() => setRefreshKey(prev => prev + 1)} 
                         onError={(msg) => setErrorMessage(msg)}
                       />
+                    </section>
+                  </div>
+                ) : (
+                  <div className="space-y-12">
+                    <section>
+                      <div className="flex justify-between items-center mb-6">
+                        <h4 className="text-sm font-bold text-white/20 uppercase tracking-widest">إحصائيات الأسئلة الشائعة</h4>
+                        <button onClick={() => setRefreshKey(prev => prev + 1)} className="text-[10px] text-orange-500 hover:underline">تحديث</button>
+                      </div>
+                      <QuestionCacheList refreshKey={refreshKey} />
                     </section>
                   </div>
                 )}
@@ -971,6 +1052,58 @@ function MediaList({ refreshKey, onEdit }: { refreshKey: number, onEdit: (item: 
         </div>
       ))}
       {items.length === 0 && <p className="text-center text-white/20 py-12 italic font-cairo">لا توجد وسائط مضافة بعد.</p>}
+    </div>
+  );
+}
+
+function QuestionCacheList({ refreshKey }: { refreshKey: number }) {
+  const [items, setItems] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    getAllCachedQuestions().then(data => {
+      setItems(data);
+      setLoading(false);
+    });
+  }, [refreshKey]);
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("هل أنت متأكد من حذف هذا السؤال من الإحصائيات؟")) return;
+    setDeletingId(id);
+    await deleteCachedQuestion(id);
+    setItems(prev => prev.filter(item => item.id !== id));
+    setDeletingId(null);
+  };
+
+  if (loading) return <div className="text-center py-12 text-white/20 font-cairo">جاري التحميل...</div>;
+
+  return (
+    <div className="space-y-4">
+      {items.map((item) => (
+        <div key={item.id} className="p-6 bg-white/5 border border-white/10 rounded-3xl hover:bg-white/10 transition-all group">
+          <div className="flex justify-between items-start mb-4">
+            <div className="flex-1">
+              <h5 className="text-sm font-bold text-orange-500 mb-1 font-cairo">{item.question}</h5>
+              <div className="flex items-center gap-4 text-[10px] text-white/40 font-bold uppercase tracking-widest">
+                <span>تكرار السؤال: {item.count || 1}</span>
+                <span>آخر ظهور: {item.lastAsked?.toDate ? item.lastAsked.toDate().toLocaleString('ar-EG') : 'غير معروف'}</span>
+              </div>
+            </div>
+            <button 
+              onClick={() => handleDelete(item.id)}
+              disabled={deletingId === item.id}
+              className="px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded-xl transition-all text-xs font-bold font-cairo disabled:opacity-50"
+            >
+              {deletingId === item.id ? "..." : "حذف"}
+            </button>
+          </div>
+          <div className="p-4 bg-black/20 rounded-2xl border border-white/5">
+            <p className="text-xs text-white/80 leading-relaxed font-cairo">{item.answer}</p>
+          </div>
+        </div>
+      ))}
+      {items.length === 0 && <p className="text-center text-white/20 py-12 italic font-cairo">لا توجد إحصائيات بعد.</p>}
     </div>
   );
 }

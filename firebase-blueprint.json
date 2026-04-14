@@ -58,6 +58,30 @@
         }
       },
       "required": ["category", "content"]
+    },
+    "QuestionCache": {
+      "title": "Question Cache",
+      "description": "Stored questions and their answers for quick retrieval.",
+      "type": "object",
+      "properties": {
+        "question": {
+          "type": "string",
+          "description": "The user's question."
+        },
+        "answer": {
+          "type": "string",
+          "description": "The provided answer."
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "count": {
+          "type": "integer",
+          "description": "How many times this question was asked."
+        }
+      },
+      "required": ["question", "answer"]
     }
   },
   "firestore": {
@@ -68,6 +92,10 @@
     "/college_info/{infoId}": {
       "schema": "CollegeInfo",
       "description": "Collection of structured college information."
+    },
+    "/questions_cache/{cacheId}": {
+      "schema": "QuestionCache",
+      "description": "Cache of previously answered questions."
     }
   }
 }

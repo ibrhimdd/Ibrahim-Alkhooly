@@ -11,7 +11,8 @@ import {
   serverTimestamp,
   doc,
   updateDoc,
-  deleteDoc
+  deleteDoc,
+  orderBy
 } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
@@ -260,6 +261,73 @@ export async function getAllCollegeInfo() {
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, path);
     return [];
+  }
+}
+
+// Question Cache Functions
+export async function getCachedQuestion(question: string) {
+  const path = 'questions_cache';
+  try {
+    const q = query(
+      collection(db, path),
+      where('question', '==', question.trim())
+    );
+    const snapshot = await getDocs(q);
+    if (!snapshot.empty) {
+      const docRef = doc(db, path, snapshot.docs[0].id);
+      await updateDoc(docRef, {
+        count: (snapshot.docs[0].data().count || 0) + 1,
+        lastAsked: serverTimestamp()
+      });
+      return snapshot.docs[0].data();
+    }
+    return null;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.GET, path);
+    return null;
+  }
+}
+
+export async function addCachedQuestion(question: string, answer: string) {
+  const path = 'questions_cache';
+  try {
+    // Check if it already exists
+    const q = query(
+      collection(db, path),
+      where('question', '==', question.trim())
+    );
+    const snapshot = await getDocs(q);
+    if (snapshot.empty) {
+      await addDoc(collection(db, path), {
+        question: question.trim(),
+        answer: answer.trim(),
+        timestamp: serverTimestamp(),
+        count: 1,
+        lastAsked: serverTimestamp()
+      });
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, path);
+  }
+}
+
+export async function getAllCachedQuestions() {
+  const path = 'questions_cache';
+  try {
+    const snapshot = await getDocs(query(collection(db, path), orderBy('timestamp', 'desc')));
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, path);
+    return [];
+  }
+}
+
+export async function deleteCachedQuestion(id: string) {
+  const path = 'questions_cache';
+  try {
+    await deleteDoc(doc(db, path, id));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
   }
 }
 
