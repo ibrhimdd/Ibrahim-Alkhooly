@@ -185,7 +185,7 @@ export default function App() {
 
   const clearTranscript = () => {
     setTranscript([]);
-    setMediaContent(null);
+    setMediaContent([]);
     if (isActive) {
       stopSession();
     }
@@ -285,12 +285,12 @@ export default function App() {
               console.log("Received Tool Calls:", toolCalls);
               setIsSearching(true);
               for (const call of toolCalls) {
-                if (call.name === "get_media_content") {
-                  const queryStr = (call.args as any).query;
-                  console.log("Executing Tool: get_media_content for", queryStr);
-                  
-                  // Fetch from Firestore
-                  getMediaByQuery(queryStr).then(async (data) => {
+                try {
+                  const session = await sessionPromise;
+                  if (call.name === "get_media_content") {
+                    const queryStr = (call.args as any).query;
+                    console.log("Executing Tool: get_media_content for", queryStr);
+                    const data = await getMediaByQuery(queryStr);
                     let resultMsg = "لم يتم العثور على وسائط لهذا البحث في قاعدة البيانات.";
                     if (data && Array.isArray(data)) {
                       setMediaContent(data.map(item => ({
@@ -300,10 +300,6 @@ export default function App() {
                       })));
                       resultMsg = data.map(item => `تم العثور على ${item.type === 'image' ? 'صورة' : 'فيديو'} بعنوان "${item.title}" وعرضه للمستخدم بنجاح.`).join('\n');
                     }
-                    console.log("Tool Result (Media):", resultMsg);
-                    
-                    // Send response back to model
-                    const session = await sessionPromise;
                     session.sendToolResponse({
                       functionResponses: [{
                         name: "get_media_content",
@@ -311,23 +307,14 @@ export default function App() {
                         response: { result: resultMsg }
                       }]
                     });
-                    setIsSearching(false);
-                  }).catch(err => {
-                    console.error("Error in get_media_content tool:", err);
-                    setIsSearching(false);
-                  });
-                } else if (call.name === "get_college_info") {
-                  const queryText = (call.args as any).query || (call.args as any).category;
-                  console.log("Executing Tool: get_college_info for", queryText);
-
-                  getCollegeInfoByQuery(queryText).then(async (data) => {
+                  } else if (call.name === "get_college_info") {
+                    const queryText = (call.args as any).query || (call.args as any).category;
+                    console.log("Executing Tool: get_college_info for", queryText);
+                    const data = await getCollegeInfoByQuery(queryText);
                     let resultMsg = "لم يتم العثور على معلومات نصية لهذه الفئة في قاعدة البيانات.";
                     if (data && Array.isArray(data)) {
                       resultMsg = data.map(item => `الفئة: ${item.category}\nالمحتوى: ${item.content}`).join('\n\n');
                     }
-                    console.log("Tool Result (Info):", resultMsg);
-
-                    const session = await sessionPromise;
                     session.sendToolResponse({
                       functionResponses: [{
                         name: "get_college_info",
@@ -335,20 +322,14 @@ export default function App() {
                         response: { result: resultMsg }
                       }]
                     });
-                    setIsSearching(false);
-                  }).catch(err => {
-                    console.error("Error in get_college_info tool:", err);
-                    setIsSearching(false);
-                  });
-                } else if (call.name === "get_cached_answer") {
-                  const question = (call.args as any).question;
-                  console.log("Executing Tool: get_cached_answer for", question);
-                  getCachedQuestion(question).then(async (data) => {
+                  } else if (call.name === "get_cached_answer") {
+                    const question = (call.args as any).question;
+                    console.log("Executing Tool: get_cached_answer for", question);
+                    const data = await getCachedQuestion(question);
                     let resultMsg = "لم يتم العثور على إجابة سابقة لهذا السؤال.";
                     if (data) {
                       resultMsg = `تم العثور على إجابة سابقة: ${data.answer}`;
                     }
-                    const session = await sessionPromise;
                     session.sendToolResponse({
                       functionResponses: [{
                         name: "get_cached_answer",
@@ -356,12 +337,10 @@ export default function App() {
                         response: { result: resultMsg }
                       }]
                     });
-                  });
-                } else if (call.name === "save_question_answer") {
-                  const { question, answer } = call.args as any;
-                  console.log("Executing Tool: save_question_answer");
-                  addCachedQuestion(question, answer).then(async () => {
-                    const session = await sessionPromise;
+                  } else if (call.name === "save_question_answer") {
+                    const { question, answer } = call.args as any;
+                    console.log("Executing Tool: save_question_answer");
+                    await addCachedQuestion(question, answer);
                     session.sendToolResponse({
                       functionResponses: [{
                         name: "save_question_answer",
@@ -369,9 +348,12 @@ export default function App() {
                         response: { result: "تم حفظ السؤال والإجابة بنجاح في الإحصائيات." }
                       }]
                     });
-                  });
+                  }
+                } catch (err) {
+                  console.error(`Error in tool ${call.name}:`, err);
                 }
               }
+              setIsSearching(false);
             }
 
             // Handle model transcription
@@ -379,11 +361,7 @@ export default function App() {
             if (modelParts) {
               const modelText = modelParts.map(p => p.text).filter(Boolean).join(' ');
               if (modelText.trim()) {
-                setTranscript(prev => {
-                  // If last message was model, we might be getting more parts of the same turn
-                  // But usually Live API sends chunks. Let's just append for now but keep more history.
-                  return [...prev.slice(-10), { role: 'model', text: modelText }];
-                });
+                setTranscript(prev => [...prev.slice(-10), { role: 'model', text: modelText }]);
               }
             }
 
@@ -391,7 +369,6 @@ export default function App() {
             const userText = message.serverContent?.inputTranscription?.text;
             if (userText) {
               console.log("User said:", userText);
-              // We don't add to transcript state as requested by user
             }
           },
           onerror: (error: any) => {
