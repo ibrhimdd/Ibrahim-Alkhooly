@@ -73,97 +73,92 @@ const HARDCODED_API_KEY = "";
 
 const LOGO_URL = "https://i.top4top.io/p_3757qb3cg0.png"; // سيقوم المستخدم باستبدال هذا برابط الصورة المرفوعة
 import { motion } from 'framer-motion';
+import { motion } from 'framer-motion';
 
 const SplashScreen = ({ onComplete }: { onComplete: () => void }) => {
-  // إعدادات حركة الحروف - جعلناها أبطأ (duration: 0.8)
-  const letterVariants = {
-    initial: { y: 20, opacity: 0 },
-    animate: { y: 0, opacity: 1, transition: { duration: 0.8 } }
-  };
+  // تقسيم النص إلى كلمات لضمان ترابط الحروف العربية
+  const words = ["كلية", "التربية", "النوعية"];
 
-  const collegeName = "كلية التربية النوعية".split("");
+  const wordVariants = {
+    initial: { y: 20, opacity: 0, filter: "blur(10px)" },
+    animate: { 
+      y: 0, 
+      opacity: 1, 
+      filter: "blur(0px)",
+      transition: { duration: 1, ease: "easeOut" } 
+    }
+  };
 
   return (
     <motion.div
       initial={{ opacity: 1 }}
       animate={{ opacity: 0 }}
-      // زيادة الـ delay لـ 5 ثواني لتعطي وقت كافي للمشاهدة
-      // وزيادة الـ duration لثانيتين لجعل الاختفاء ناعم جداً
       transition={{ duration: 2, delay: 5, ease: "easeInOut" }}
       onAnimationComplete={onComplete}
       className="fixed inset-0 z-[200] bg-[#0c0603] flex flex-col items-center justify-center overflow-hidden"
+      dir="rtl" // التأكد من اتجاه النص من اليمين لليسان
     >
-      {/* دوائر الخلفية - جعلنا حركتها أبطأ (12 ثانية) لراحة العين */}
+      {/* الخلفية المضيئة */}
       <div className="absolute inset-0 overflow-hidden">
         <motion.div 
-          animate={{ 
-            scale: [1, 1.2, 1],
-            opacity: [0.2, 0.4, 0.2] 
-          }}
-          transition={{ duration: 12, repeat: Infinity, ease: "linear" }}
-          className="absolute -top-[10%] -left-[10%] w-[80%] h-[80%] bg-orange-900/10 blur-[130px] rounded-full" 
+          animate={{ scale: [1, 1.1, 1], opacity: [0.1, 0.3, 0.1] }}
+          transition={{ duration: 10, repeat: Infinity }}
+          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full bg-orange-900/20 blur-[120px] rounded-full" 
         />
       </div>
 
-      {/* منطقة الشعار - دخول بطيء وفخم */}
+      {/* الشعار */}
       <motion.div
-        initial={{ scale: 0.7, opacity: 0 }}
+        initial={{ scale: 0.8, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
-        transition={{ 
-          duration: 2, // الحركة تأخذ ثانيتين كاملتين
-          ease: [0.22, 1, 0.36, 1] 
-        }}
+        transition={{ duration: 1.5, ease: "easeOut" }}
         className="relative mb-12"
       >
-        {/* التوهج الخلفي ينبض ببطء شديد */}
-        <div className="absolute inset-0 bg-orange-600/20 blur-[60px] rounded-full scale-150 animate-[pulse_4s_infinite]" />
-        
-        <div className="relative z-10 p-6 rounded-[2.5rem] bg-white/[0.03] backdrop-blur-md border border-white/10 shadow-2xl">
+        <div className="absolute inset-0 bg-orange-600/20 blur-[60px] rounded-full scale-150 animate-pulse" />
+        <div className="relative z-10 p-6 rounded-[2.5rem] bg-white/[0.03] backdrop-blur-xl border border-white/10 shadow-2xl">
           <img 
             src={LOGO_URL} 
             alt="Logo" 
-            className="w-44 h-44 md:w-56 md:h-56 object-contain drop-shadow-[0_0_20px_rgba(249,115,22,0.3)]"
+            className="w-44 h-44 md:w-56 md:h-56 object-contain drop-shadow-[0_0_20px_rgba(249,115,22,0.4)]"
           />
         </div>
       </motion.div>
 
-      {/* النصوص - تظهر حرف حرف بتأثير سينمائي */}
+      {/* النصوص - ظهور كلمة بكلمة لضمان الترابط */}
       <div className="text-center z-10">
         <motion.div 
-          className="flex justify-center mb-4"
+          className="flex flex-row-reverse justify-center gap-3 mb-4" // flex-row-reverse لترتيب الكلمات العربية صح
           initial="initial"
           animate="animate"
-          // زيادة الوقت بين ظهور كل حرف (stagger: 0.1)
-          transition={{ staggerChildren: 0.1, delayChildren: 1.5 }}
+          transition={{ staggerChildren: 0.3, delayChildren: 1 }}
         >
-          {collegeName.map((char, index) => (
+          {words.map((word, index) => (
             <motion.span
               key={index}
-              variants={letterVariants}
-              className="text-4xl md:text-6xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white via-white to-gray-500 mx-[2px] tracking-tight"
+              variants={wordVariants}
+              className="text-4xl md:text-6xl font-black text-white drop-shadow-sm"
             >
-              {char === " " ? "\u00A0" : char}
+              {word}
             </motion.span>
           ))}
         </motion.div>
 
         <motion.p
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          // يظهر النص الفرعي بعد 3 ثواني من البداية
-          transition={{ delay: 3, duration: 1.5 }}
-          className="text-orange-500 font-bold uppercase tracking-[0.5em] text-xs md:text-sm opacity-80"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 2.5, duration: 1.5 }}
+          className="text-orange-500 font-bold uppercase tracking-[0.3em] text-sm md:text-base border-t border-orange-500/30 pt-4"
         >
           جامعة كفر الشيخ
         </motion.p>
       </div>
 
-      {/* خط تقدم بطيء جداً ليناسب وقت الانتظار */}
+      {/* خط التحميل السفلي */}
       <motion.div 
-        className="absolute bottom-0 left-0 h-[3px] bg-gradient-to-r from-transparent via-orange-600 to-transparent"
-        initial={{ width: 0, opacity: 0 }}
-        animate={{ width: "100%", opacity: 1 }}
-        transition={{ delay: 0.5, duration: 6, ease: "easeInOut" }}
+        className="absolute bottom-0 right-0 h-[3px] bg-gradient-to-l from-orange-600 via-orange-400 to-transparent"
+        initial={{ width: 0 }}
+        animate={{ width: "100%" }}
+        transition={{ duration: 6, ease: "easeInOut" }}
       />
     </motion.div>
   );
