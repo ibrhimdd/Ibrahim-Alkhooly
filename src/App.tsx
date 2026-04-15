@@ -71,7 +71,7 @@ declare global {
 // يمكنك وضع مفتاح Gemini API الخاص بك هنا مباشرة
 const HARDCODED_API_KEY = ""; 
 
-const LOGO_URL = "https://i.imgur.com/your-logo-id.png"; // سيقوم المستخدم باستبدال هذا برابط الصورة المرفوعة
+const LOGO_URL = "https://k.top4top.io/p_3757c0v2q0.jpg"; // سيقوم المستخدم باستبدال هذا برابط الصورة المرفوعة
 
 const SplashScreen = ({ onComplete }: { onComplete: () => void }) => {
   return (
