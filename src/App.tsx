@@ -72,50 +72,110 @@ declare global {
 const HARDCODED_API_KEY = ""; 
 
 const LOGO_URL = "https://i.top4top.io/p_3757qb3cg0.png"; // سيقوم المستخدم باستبدال هذا برابط الصورة المرفوعة
+import { motion, AnimatePresence } from 'framer-motion';
 
 const SplashScreen = ({ onComplete }: { onComplete: () => void }) => {
+  // إعدادات حركة الحروف
+  const letterVariants = {
+    initial: { y: 20, opacity: 0 },
+    animate: { y: 0, opacity: 1 }
+  };
+
+  const collegeName = "كلية التربية النوعية".split("");
+
   return (
     <motion.div
       initial={{ opacity: 1 }}
-      animate={{ opacity: 0 }}
-      transition={{ duration: 1, delay: 3 }}
+      exit={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.8, ease: "easeInOut" }}
       onAnimationComplete={onComplete}
-      className="fixed inset-0 z-[200] bg-[#0a0502] flex flex-col items-center justify-center p-6"
+      className="fixed inset-0 z-[200] bg-[#0c0603] flex flex-col items-center justify-center overflow-hidden"
     >
-      <motion.div
-        initial={{ scale: 0.5, opacity: 0, rotate: -10 }}
-        animate={{ scale: 1, opacity: 1, rotate: 0 }}
-        transition={{ 
-          duration: 1.5, 
-          ease: "easeOut",
-          type: "spring",
-          stiffness: 100
-        }}
-        className="relative"
-      >
-        <div className="absolute inset-0 bg-orange-500/20 blur-3xl rounded-full animate-pulse" />
-        <img 
-          src={LOGO_URL} 
-          alt="Logo" 
-          className="w-48 h-48 object-contain relative z-10"
-          onError={(e) => {
-            // Fallback if logo fails to load
-            (e.target as HTMLImageElement).src = "https://cdn-icons-png.flaticon.com/512/2991/2991148.png";
+      {/* خلفية ديناميكية متحركة */}
+      <div className="absolute inset-0 overflow-hidden">
+        <motion.div 
+          animate={{ 
+            scale: [1, 1.2, 1],
+            opacity: [0.3, 0.5, 0.3] 
           }}
+          transition={{ duration: 8, repeat: Infinity }}
+          className="absolute -top-[20%] -left-[10%] w-[70%] h-[70%] bg-orange-900/20 blur-[120px] rounded-full" 
         />
-      </motion.div>
+        <motion.div 
+          animate={{ 
+            scale: [1, 1.3, 1],
+            opacity: [0.2, 0.4, 0.2] 
+          }}
+          transition={{ duration: 10, repeat: Infinity, delay: 1 }}
+          className="absolute -bottom-[20%] -right-[10%] w-[60%] h-[60%] bg-amber-900/20 blur-[120px] rounded-full" 
+        />
+      </div>
+
+      {/* منطقة الشعار مع تأثير هالة ضوئية */}
       <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 1, duration: 1 }}
-        className="mt-8 text-center"
+        initial={{ scale: 0.8, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ 
+          duration: 1.2, 
+          ease: [0.16, 1, 0.3, 1] // Custom Cubic Bezier لسلاسة أكبر
+        }}
+        className="relative mb-10"
       >
-        <h1 className="text-3xl font-bold tracking-tight text-glow mb-2">كلية التربية النوعية</h1>
-        <p className="text-orange-500 font-bold uppercase tracking-[0.2em] text-xs">جامعة كفر الشيخ</p>
+        <div className="absolute inset-0 bg-orange-500/30 blur-[50px] rounded-full scale-125 animate-pulse" />
+        
+        <motion.div
+          whileHover={{ scale: 1.05 }}
+          className="relative z-10 p-4 rounded-3xl bg-white/5 backdrop-blur-sm border border-white/10 shadow-2xl"
+        >
+          <img 
+            src={LOGO_URL} 
+            alt="Logo" 
+            className="w-40 h-40 md:w-48 md:h-48 object-contain drop-shadow-[0_0_15px_rgba(249,115,22,0.5)]"
+          />
+        </motion.div>
       </motion.div>
+
+      {/* نصوص متحركة باحترافية */}
+      <div className="text-center z-10">
+        <motion.div 
+          className="flex justify-center mb-3"
+          initial="initial"
+          animate="animate"
+          transition={{ staggerChildren: 0.05, delayChildren: 0.5 }}
+        >
+          {collegeName.map((char, index) => (
+            <motion.span
+              key={index}
+              variants={letterVariants}
+              className="text-3xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white to-gray-400 mx-[1px]"
+            >
+              {char === " " ? "\u00A0" : char}
+            </motion.span>
+          ))}
+        </motion.div>
+
+        <motion.p
+          initial={{ opacity: 0, letterSpacing: "0.1em" }}
+          animate={{ opacity: 1, letterSpacing: "0.4em" }}
+          transition={{ delay: 1.2, duration: 1.5 }}
+          className="text-orange-500 font-medium uppercase text-sm md:text-base"
+        >
+          جامعة كفر الشيخ
+        </motion.p>
+      </div>
+
+      {/* خط تقدم سفلي بسيط يعطي شعوراً بالتحميل */}
+      <motion.div 
+        className="absolute bottom-0 left-0 h-[2px] bg-gradient-to-r from-transparent via-orange-500 to-transparent"
+        initial={{ width: 0, opacity: 0 }}
+        animate={{ width: "100%", opacity: 1 }}
+        transition={{ delay: 0.5, duration: 3, ease: "linear" }}
+      />
     </motion.div>
   );
 };
+
 
 export default function App() {
   const [showSplash, setShowSplash] = useState(true);
