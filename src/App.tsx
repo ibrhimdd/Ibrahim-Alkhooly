@@ -77,7 +77,7 @@ import { motion } from 'framer-motion';
 
 const SplashScreen = ({ onComplete }: { onComplete: () => void }) => {
   // تقسيم النص إلى كلمات لضمان ترابط الحروف العربية
-  const words = ["كلية", "التربية", "النوعية"];
+  const words = ["النوعية", "التربية", "كلية"];
 
   const wordVariants = {
     initial: { y: 20, opacity: 0, filter: "blur(10px)" },
