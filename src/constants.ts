@@ -93,8 +93,3 @@ export const SAVE_QUESTION_ANSWER_TOOL = {
 export const MODEL_NAME = "gemini-2.5-flash-native-audio-preview-09-2025";
 
 
-
-
-
-
- انابستخدم الكود   دة في المساعد اللي عندي عايزه لما ابحث عن صورة   اوفيديوا يطلعلي نتيجة بحث واحد فقط اللي بتخص الموضوع لانه بيطلع 3 صور  بناء علي الكلمات المفتايحية بنهم 
