@@ -13,7 +13,7 @@ export class AudioHandler {
   
   // For playback
   private nextStartTime: number = 0;
-  private outputSampleRate: number = 16000; // Gemini output sample rate
+  private outputSampleRate: number = 24000; // Gemini output sample rate
   private inputSampleRate: number = 16000; // Gemini input sample rate
 
   constructor(private onAudioData: (base64Data: string) => void) {}
