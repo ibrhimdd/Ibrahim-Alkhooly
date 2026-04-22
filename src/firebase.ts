@@ -73,42 +73,97 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   throw new Error(JSON.stringify(errInfo));
 }
 
+// Arabic normalization helper
+function normalizeArabic(text: string): string {
+  if (!text) return "";
+  return text
+    .toLowerCase()
+    .replace(/[أإآ]/g, 'ا')
+    .replace(/ة/g, 'ه')
+    .replace(/ى/g, 'ي')
+    .replace(/[\u064B-\u065F]/g, "") // Remove harakat (diacritics)
+    .replace(/[^\w\s\u0621-\u064A]/g, "") // Remove punctuation
+    .trim();
+}
+
+// --- In-memory Database Cache for performance ---
+const dbCache: Record<string, { data: any[], timestamp: number }> = {};
+const CACHE_TTL = 300000; // 5 minutes
+
+async function getCachedDocs(path: string) {
+  const now = Date.now();
+  if (dbCache[path] && (now - dbCache[path].timestamp) < CACHE_TTL) {
+    return dbCache[path].data;
+  }
+  
+  const snapshot = await getDocs(collection(db, path));
+  const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() as any }));
+  dbCache[path] = { data, timestamp: now };
+  return data;
+}
+
+function invalidateCache(path: string) {
+  delete dbCache[path];
+}
+// --------------------------------------------------
+
 // Function to fetch media by query key
 export async function getMediaByQuery(searchQuery: string) {
   const path = 'media';
   try {
-    const searchTerms = searchQuery.toLowerCase().split(/\s+/).filter(t => t.length > 1);
+    const normalizedQuery = normalizeArabic(searchQuery);
+    const searchTerms = normalizedQuery.split(/\s+/).filter(t => t.length > 1);
     
-    // Fetch all docs to perform fuzzy search client-side
-    const allSnapshot = await getDocs(collection(db, path));
-    const allDocs = allSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() as any }));
+    if (searchTerms.length === 0) return null;
+
+    // Use cached docs for speed
+    const allDocs = await getCachedDocs(path);
     
-    // Score matches
+    // Server-side filter hint: if any term is completely missing from keywords, it might be a weak match
+    // For now we still score all to ensure "fuzzy" works well, but we use the memory cache.
     const scoredMatches = allDocs.map(doc => {
       let score = 0;
-      const queryKey = (doc.queryKey || "").toLowerCase();
-      const title = (doc.title || "").toLowerCase();
-      const desc = (doc.description || "").toLowerCase();
-      const queryLower = searchQuery.toLowerCase();
+      const normalizedQueryKey = normalizeArabic(doc.queryKey || "");
+      const normalizedTitle = normalizeArabic(doc.title || "");
+      const normalizedDesc = normalizeArabic(doc.description || "");
       
-      if (queryKey === queryLower) score += 100;
-      else if (queryKey.includes(queryLower)) score += 50;
+      // Bonus for exact match or substring match of the whole query
+      if (normalizedQueryKey === normalizedQuery) score += 200;
+      else if (normalizedQueryKey.includes(normalizedQuery)) score += 100;
       
-      if (title === queryLower) score += 80;
-      else if (title.includes(queryLower)) score += 40;
+      if (normalizedTitle === normalizedQuery) score += 150;
+      else if (normalizedTitle.includes(normalizedQuery)) score += 80;
       
+      // Individual term matching
+      let termsMatched = 0;
       searchTerms.forEach(term => {
-        if (queryKey.includes(term)) score += 20;
-        if (title.includes(term)) score += 15;
-        if (desc.includes(term)) score += 5;
+        let termFound = false;
+        if (normalizedQueryKey.includes(term)) {
+          score += 40;
+          termFound = true;
+        }
+        if (normalizedTitle.includes(term)) {
+          score += 30;
+          termFound = true;
+        }
+        if (normalizedDesc.includes(term)) {
+          score += 10;
+          termFound = true;
+        }
+        if (termFound) termsMatched++;
       });
+
+      // Bonus for matching multiple terms
+      if (termsMatched > 1) {
+        score += (termsMatched / searchTerms.length) * 50;
+      }
       
       return { doc, score };
-    }).filter(m => m.score > 15);
+    }).filter(m => m.score >= 30); // Higher score required but easier to reach with normalization and term weights
 
     if (scoredMatches.length > 0) {
       scoredMatches.sort((a, b) => b.score - a.score);
-      return scoredMatches.slice(0, 3).map(m => m.doc);
+      return scoredMatches.slice(0, 1).map(m => m.doc); // Return top 1 most relevant
     }
     
     return null;
@@ -118,12 +173,37 @@ export async function getMediaByQuery(searchQuery: string) {
   }
 }
 
+// Keyword generator for faster search
+function generateKeywords(text: string): string[] {
+  if (!text) return [];
+  const normalized = normalizeArabic(text);
+  const words = normalized.split(/\s+/).filter(w => w.length >= 2);
+  const keywords = new Set<string>();
+  
+  words.forEach(word => {
+    keywords.add(word);
+    // Add prefixes for partial matching (e.g., "احمد" -> "اح", "احم", "احمد")
+    for (let i = 2; i <= word.length; i++) {
+      keywords.add(word.substring(0, i));
+    }
+  });
+  
+  return Array.from(keywords);
+}
+
 // Function to add media
 export async function addMedia(data: { queryKey: string, type: 'image' | 'video', url: string, title: string, description?: string }) {
   const path = 'media';
   try {
+    const keywords = [
+      ...generateKeywords(data.queryKey),
+      ...generateKeywords(data.title),
+      ...(data.description ? generateKeywords(data.description) : [])
+    ];
+    
     await addDoc(collection(db, path), {
       ...data,
+      keywords: Array.from(new Set(keywords)).slice(0, 500), // Firestore limits
       createdAt: serverTimestamp()
     });
   } catch (error) {
@@ -135,8 +215,14 @@ export async function addMedia(data: { queryKey: string, type: 'image' | 'video'
 export async function addCollegeInfo(data: { category: string, content: string, [key: string]: any }) {
   const path = 'college_info';
   try {
+    const keywords = [
+      ...generateKeywords(data.category),
+      ...generateKeywords(data.content.substring(0, 1000)) // Limit indexing to first 1000 chars
+    ];
+
     await addDoc(collection(db, path), {
       ...data,
+      keywords: Array.from(new Set(keywords)).slice(0, 500),
       lastUpdated: serverTimestamp()
     });
   } catch (error) {
@@ -189,28 +275,44 @@ export async function getCollegeInfoByCategory(category: string) {
 export async function getCollegeInfoByQuery(searchQuery: string) {
   const path = 'college_info';
   try {
-    const searchTerms = searchQuery.toLowerCase().split(/\s+/).filter(t => t.length > 1);
+    const normalizedQuery = normalizeArabic(searchQuery);
+    const searchTerms = normalizedQuery.split(/\s+/).filter(t => t.length > 1);
     
-    // Fetch all docs to perform fuzzy search client-side (Firestore doesn't support full-text search)
-    const allSnapshot = await getDocs(collection(db, path));
-    const allDocs = allSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() as any }));
+    if (searchTerms.length === 0) return [];
+
+    // Use cached docs for speed
+    const allDocs = await getCachedDocs(path);
     
     // Score matches
     const categoryScores: Record<string, number> = {};
     
     allDocs.forEach(doc => {
       let score = 0;
-      const cat = (doc.category || "").toLowerCase();
-      const cont = (doc.content || "").toLowerCase();
-      const queryLower = searchQuery.toLowerCase();
+      const normalizedCat = normalizeArabic(doc.category || "");
+      const normalizedCont = normalizeArabic(doc.content || "");
+      const normalizedQuery = normalizeArabic(searchQuery);
       
-      if (cat === queryLower) score += 100;
-      else if (cat.includes(queryLower)) score += 50;
+      if (normalizedCat === normalizedQuery) score += 200;
+      else if (normalizedCat.includes(normalizedQuery)) score += 100;
+      else if (normalizedQuery.includes(normalizedCat)) score += 80;
       
+      let termsMatched = 0;
       searchTerms.forEach(term => {
-        if (cat.includes(term)) score += 30;
-        if (cont.includes(term)) score += 10;
+        let foundForTerm = false;
+        if (normalizedCat.includes(term)) {
+          score += 50;
+          foundForTerm = true;
+        }
+        if (normalizedCont.includes(term)) {
+          score += 15;
+          foundForTerm = true;
+        }
+        if (foundForTerm) termsMatched++;
       });
+
+      if (termsMatched > 1) {
+        score += (termsMatched / searchTerms.length) * 50;
+      }
       
       if (score > 0) {
         categoryScores[doc.category] = Math.max(categoryScores[doc.category] || 0, score);
@@ -219,7 +321,7 @@ export async function getCollegeInfoByQuery(searchQuery: string) {
 
     const sortedCategories = Object.entries(categoryScores)
       .sort(([, a], [, b]) => b - a)
-      .filter(([, score]) => score > 15) // Threshold for relevance
+      .filter(([, score]) => score >= 30) // Threshold for relevance
       .slice(0, 3); // Top 3 matching categories
 
     if (sortedCategories.length > 0) {
@@ -268,22 +370,25 @@ export async function getAllCollegeInfo() {
 export async function getCachedQuestion(question: string) {
   const path = 'questions_cache';
   try {
-    const q = query(
-      collection(db, path),
-      where('question', '==', question.trim())
-    );
-    const snapshot = await getDocs(q);
-    if (!snapshot.empty) {
-      const docRef = doc(db, path, snapshot.docs[0].id);
+    const normalizedTarget = normalizeArabic(question);
+    
+    // Fetch all for client-side fuzzy matching to handle variations (Arabic letters, extra spaces, etc.)
+    const snapshot = await getDocs(collection(db, path));
+    const allCached = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() as any }));
+    
+    const matched = allCached.find(c => normalizeArabic(c.question) === normalizedTarget);
+    
+    if (matched) {
+      const docRef = doc(db, path, matched.id);
       await updateDoc(docRef, {
-        count: (snapshot.docs[0].data().count || 0) + 1,
+        count: (matched.count || 0) + 1,
         lastAsked: serverTimestamp()
       });
-      return snapshot.docs[0].data();
+      return matched;
     }
     return null;
   } catch (error) {
-    handleFirestoreError(error, OperationType.GET, path);
+    handleFirestoreError(error, OperationType.LIST, path);
     return null;
   }
 }
@@ -291,13 +396,13 @@ export async function getCachedQuestion(question: string) {
 export async function addCachedQuestion(question: string, answer: string) {
   const path = 'questions_cache';
   try {
-    // Check if it already exists
-    const q = query(
-      collection(db, path),
-      where('question', '==', question.trim())
-    );
-    const snapshot = await getDocs(q);
-    if (snapshot.empty) {
+    const normalizedTarget = normalizeArabic(question);
+    
+    // Check if it already exists (normalized)
+    const snapshot = await getDocs(collection(db, path));
+    const exists = snapshot.docs.some(doc => normalizeArabic(doc.data().question) === normalizedTarget);
+    
+    if (!exists) {
       await addDoc(collection(db, path), {
         question: question.trim(),
         answer: answer.trim(),
@@ -332,36 +437,57 @@ export async function deleteCachedQuestion(id: string) {
 }
 
 export async function updateMedia(id: string, data: any) {
-  const path = `media/${id}`;
+  const path = 'media';
   try {
-    await updateDoc(doc(db, 'media', id), data);
+    const updatedData = { ...data };
+    if (data.queryKey || data.title || data.description) {
+      const keywords = [
+        ...generateKeywords(data.queryKey || ""),
+        ...generateKeywords(data.title || ""),
+        ...(data.description ? generateKeywords(data.description) : [])
+      ];
+      updatedData.keywords = Array.from(new Set(keywords)).slice(0, 500);
+    }
+    await updateDoc(doc(db, path, id), updatedData);
+    invalidateCache(path);
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
   }
 }
 
 export async function deleteMedia(id: string) {
-  const path = `media/${id}`;
+  const path = 'media';
   try {
-    await deleteDoc(doc(db, 'media', id));
+    await deleteDoc(doc(db, path, id));
+    invalidateCache(path);
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
   }
 }
 
 export async function updateCollegeInfo(id: string, data: any) {
-  const path = `college_info/${id}`;
+  const path = 'college_info';
   try {
-    await updateDoc(doc(db, 'college_info', id), data);
+    const updatedData = { ...data };
+    if (data.category || data.content) {
+      const keywords = [
+        ...generateKeywords(data.category || ""),
+        ...generateKeywords((data.content || "").substring(0, 1000))
+      ];
+      updatedData.keywords = Array.from(new Set(keywords)).slice(0, 500);
+    }
+    await updateDoc(doc(db, path, id), updatedData);
+    invalidateCache(path);
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
   }
 }
 
 export async function deleteCollegeInfo(id: string) {
-  const path = `college_info/${id}`;
+  const path = 'college_info';
   try {
-    await deleteDoc(doc(db, 'college_info', id));
+    await deleteDoc(doc(db, path, id));
+    invalidateCache(path);
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
   }

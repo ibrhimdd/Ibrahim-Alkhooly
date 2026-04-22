@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { GoogleGenAI, Modality, LiveServerMessage, Type } from "@google/genai";
+import { GoogleGenAI, Modality, LiveServerMessage, Type, ThinkingLevel } from "@google/genai";
 import { 
   Mic, 
   MicOff, 
@@ -17,7 +17,11 @@ import {
   Newspaper,
   Users,
   RefreshCcw,
-  Home
+  Home,
+  ExternalLink,
+  Key,
+  X,
+  Send
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AudioHandler } from './utils/audio';
@@ -71,109 +75,96 @@ declare global {
 // يمكنك وضع مفتاح Gemini API الخاص بك هنا مباشرة
 const HARDCODED_API_KEY = ""; 
 
-const LOGO_URL = "https://i.top4top.io/p_3757qb3cg0.png"; // سيقوم المستخدم باستبدال هذا برابط الصورة المرفوعة
-import { motion } from 'framer-motion';
-import { motion } from 'framer-motion';
+const LOGO_URL = "https://i.imgur.com/your-logo-id.png"; // سيقوم المستخدم باستبدال هذا برابط الصورة المرفوعة
 
 const SplashScreen = ({ onComplete }: { onComplete: () => void }) => {
-  // تقسيم النص إلى كلمات لضمان ترابط الحروف العربية
-  const words = ["النوعية", "التربية", "كلية"];
-
-  const wordVariants = {
-    initial: { y: 20, opacity: 0, filter: "blur(10px)" },
-    animate: { 
-      y: 0, 
-      opacity: 1, 
-      filter: "blur(0px)",
-      transition: { duration: 1, ease: "easeOut" } 
-    }
-  };
-
   return (
     <motion.div
       initial={{ opacity: 1 }}
       animate={{ opacity: 0 }}
-      transition={{ duration: 2, delay: 5, ease: "easeInOut" }}
+      transition={{ duration: 1, delay: 3 }}
       onAnimationComplete={onComplete}
-      className="fixed inset-0 z-[200] bg-[#0c0603] flex flex-col items-center justify-center overflow-hidden"
-      dir="rtl" // التأكد من اتجاه النص من اليمين لليسان
+      className="fixed inset-0 z-[200] bg-[#0a0502] flex flex-col items-center justify-center p-6"
     >
-      {/* الخلفية المضيئة */}
-      <div className="absolute inset-0 overflow-hidden">
-        <motion.div 
-          animate={{ scale: [1, 1.1, 1], opacity: [0.1, 0.3, 0.1] }}
-          transition={{ duration: 10, repeat: Infinity }}
-          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full bg-orange-900/20 blur-[120px] rounded-full" 
-        />
-      </div>
-
-      {/* الشعار */}
       <motion.div
-        initial={{ scale: 0.8, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        transition={{ duration: 1.5, ease: "easeOut" }}
-        className="relative mb-12"
+        initial={{ scale: 0.5, opacity: 0, rotate: -10 }}
+        animate={{ scale: 1, opacity: 1, rotate: 0 }}
+        transition={{ 
+          duration: 1.5, 
+          ease: "easeOut",
+          type: "spring",
+          stiffness: 100
+        }}
+        className="relative"
       >
-        <div className="absolute inset-0 bg-orange-600/20 blur-[60px] rounded-full scale-150 animate-pulse" />
-        <div className="relative z-10 p-6 rounded-[2.5rem] bg-white/[0.03] backdrop-blur-xl border border-white/10 shadow-2xl">
-          <img 
-            src={LOGO_URL} 
-            alt="Logo" 
-            className="w-44 h-44 md:w-56 md:h-56 object-contain drop-shadow-[0_0_20px_rgba(249,115,22,0.4)]"
-          />
-        </div>
+        <div className="absolute inset-0 bg-orange-500/20 blur-3xl rounded-full animate-pulse" />
+        <img 
+          src={LOGO_URL} 
+          alt="Logo" 
+          className="w-48 h-48 object-contain relative z-10"
+          onError={(e) => {
+            // Fallback if logo fails to load
+            (e.target as HTMLImageElement).src = "https://cdn-icons-png.flaticon.com/512/2991/2991148.png";
+          }}
+        />
       </motion.div>
-
-      {/* النصوص - ظهور كلمة بكلمة لضمان الترابط */}
-      <div className="text-center z-10">
-        <motion.div 
-          className="flex flex-row-reverse justify-center gap-3 mb-4" // flex-row-reverse لترتيب الكلمات العربية صح
-          initial="initial"
-          animate="animate"
-          transition={{ staggerChildren: 0.3, delayChildren: 1 }}
-        >
-          {words.map((word, index) => (
-            <motion.span
-              key={index}
-              variants={wordVariants}
-              className="text-4xl md:text-6xl font-black text-white drop-shadow-sm"
-            >
-              {word}
-            </motion.span>
-          ))}
-        </motion.div>
-
-        <motion.p
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 2.5, duration: 1.5 }}
-          className="text-orange-500 font-bold uppercase tracking-[0.3em] text-sm md:text-base border-t border-orange-500/30 pt-4"
-        >
-          جامعة كفر الشيخ
-        </motion.p>
-      </div>
-
-      {/* خط التحميل السفلي */}
-      <motion.div 
-        className="absolute bottom-0 right-0 h-[3px] bg-gradient-to-l from-orange-600 via-orange-400 to-transparent"
-        initial={{ width: 0 }}
-        animate={{ width: "100%" }}
-        transition={{ duration: 6, ease: "easeInOut" }}
-      />
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 1, duration: 1 }}
+        className="mt-8 text-center"
+      >
+        <h1 className="text-3xl font-bold tracking-tight text-glow mb-2">كلية التربية النوعية</h1>
+        <p className="text-orange-500 font-bold uppercase tracking-[0.2em] text-xs">جامعة كفر الشيخ</p>
+      </motion.div>
     </motion.div>
   );
 };
 
+const IDLE_VIDEO_URL = "https://g.top4top.io/m_3764wecfx1.mp4";
 
+const IdleVideoOverlay = ({ onDismiss }: { onDismiss: () => void }) => {
+  return (
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[500] bg-black flex items-center justify-center cursor-pointer"
+      onClick={onDismiss}
+    >
+      <video 
+        src={IDLE_VIDEO_URL} 
+        autoPlay 
+        loop 
+        muted
+        playsInline
+        className="w-full h-full object-cover"
+      />
+      <div className="absolute inset-0 bg-black/20" />
+      <motion.div 
+        initial={{ y: 20, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ delay: 1 }}
+        className="absolute bottom-12 left-1/2 -translate-x-1/2 px-8 py-4 bg-orange-600 hover:bg-orange-700 text-white font-bold rounded-full shadow-2xl shadow-orange-600/40 font-cairo flex items-center gap-3 transition-all active:scale-95"
+      >
+        <RefreshCcw size={18} className="animate-spin-slow" />
+        استكمال المحادثة
+      </motion.div>
+    </motion.div>
+  );
+};
 
 export default function App() {
   const [showSplash, setShowSplash] = useState(true);
+  const [showIdleVideo, setShowIdleVideo] = useState(false);
+  const lastActivityRef = useRef<number>(Date.now());
   const [isActive, setIsActive] = useState(false);
   const [status, setStatus] = useState<'idle' | 'connecting' | 'active' | 'error'>('idle');
-  const [transcript, setTranscript] = useState<{ role: 'user' | 'model', text: string }[]>([]);
+  const [transcript, setTranscript] = useState<{ role: 'user' | 'model', text?: string, media?: MediaItem }[]>([]);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isAiThinking, setIsAiThinking] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [mediaContent, setMediaContent] = useState<MediaItem[]>([]);
+  const [currentResponse, setCurrentResponse] = useState('');
   const [showAdmin, setShowAdmin] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [passwordInput, setPasswordInput] = useState('');
@@ -181,16 +172,22 @@ export default function App() {
   const [adminTab, setAdminTab] = useState<'media' | 'info' | 'files' | 'stats'>('media');
   const [refreshKey, setRefreshKey] = useState(0);
   const [user, setUser] = useState<any>(null);
+  const [isMicCaptured, setIsMicCaptured] = useState(false);
   
   const [editingMedia, setEditingMedia] = useState<any>(null);
   const [editingInfo, setEditingInfo] = useState<any>(null);
   
   const [isSearching, setIsSearching] = useState(false);
   const [hasApiKey, setHasApiKey] = useState<boolean | null>(true);
+  const [userApiKey, setUserApiKey] = useState<string>(localStorage.getItem('gemini_user_api_key') || '');
+  const [showKeyModal, setShowKeyModal] = useState(false);
+  const [chatInput, setChatInput] = useState('');
   
   const audioHandlerRef = useRef<AudioHandler | null>(null);
   const sessionRef = useRef<any>(null);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
+  const suppressAudioRef = useRef(false);
+  const responseBuildingRef = useRef('');
 
   useEffect(() => {
     const checkApiKey = async () => {
@@ -201,8 +198,45 @@ export default function App() {
     const unsubscribe = auth.onAuthStateChanged((u) => {
       setUser(u);
     });
-    return () => unsubscribe();
-  }, []);
+
+    // Activity tracking for Idle Video
+    const updateActivity = () => {
+      lastActivityRef.current = Date.now();
+      if (showIdleVideo) {
+        setShowIdleVideo(false);
+      }
+    };
+
+    window.addEventListener('mousemove', updateActivity);
+    window.addEventListener('mousedown', updateActivity);
+    window.addEventListener('keydown', updateActivity);
+    window.addEventListener('touchstart', updateActivity);
+    window.addEventListener('scroll', updateActivity);
+
+    const idleInterval = setInterval(() => {
+      const now = Date.now();
+      const diff = now - lastActivityRef.current;
+      // 1 minute = 60,000 ms
+      if (diff > 60000 && !showIdleVideo && !showSplash) {
+        setShowIdleVideo(true);
+      }
+    }, 1000);
+    
+    // Cleanup on unmount
+    return () => {
+      unsubscribe();
+      window.removeEventListener('mousemove', updateActivity);
+      window.removeEventListener('mousedown', updateActivity);
+      window.removeEventListener('keydown', updateActivity);
+      window.removeEventListener('touchstart', updateActivity);
+      window.removeEventListener('scroll', updateActivity);
+      clearInterval(idleInterval);
+      if (sessionRef.current) {
+        console.log("Cleanup: Closing session on unmount");
+        stopSession();
+      }
+    };
+  }, [showIdleVideo, showSplash]);
 
   const handleSelectKey = async () => {
     if (window.aistudio) {
@@ -215,7 +249,7 @@ export default function App() {
     if (transcriptEndRef.current) {
       transcriptEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [transcript]);
+  }, [transcript, currentResponse, isSearching, isAiThinking]);
 
   useEffect(() => {
     // Test Firestore connection on mount
@@ -234,15 +268,29 @@ export default function App() {
 
   const clearTranscript = () => {
     setTranscript([]);
-    setMediaContent([]);
     if (isActive) {
       stopSession();
     }
   };
 
-  const startSession = async () => {
+  const startSession = async (requestMic: boolean = true) => {
+    // Prevent multiple concurrent connection attempts
+    if (status === 'connecting' || (status === 'active' && requestMic && !isMicCaptured)) {
+      if (status === 'active' && requestMic && !isMicCaptured) {
+        // Just activate mic for existing session
+        return activateMic();
+      }
+      return;
+    }
+
     try {
       setErrorMessage(null);
+      
+      // Cleanup any existing session before starting a new one
+      if (sessionRef.current) {
+        console.log("Cleanup before Connect: Closing existing session");
+        stopSession();
+      }
       
       setStatus('connecting');
       console.log("Starting session...");
@@ -256,27 +304,34 @@ export default function App() {
         }
       });
       
-      console.log("Requesting microphone access...");
-      try {
-        await audioHandlerRef.current.startCapture();
-        console.log("Microphone access granted.");
-      } catch (audioError: any) {
-        console.error("Microphone access error:", audioError);
-        if (audioError.name === 'NotAllowedError' || audioError.message?.includes('Permission denied')) {
-          setErrorMessage("يرجى السماح بالوصول إلى الميكروفون من إعدادات المتصفح للمتابعة. إذا كنت تستخدم التطبيق داخل نافذة المعاينة، جرب فتحه في نافذة جديدة (Open in new tab) لضمان عمل الميكروفون بشكل صحيح.");
-        } else if (audioError.name === 'NotFoundError') {
-          setErrorMessage("لم يتم العثور على ميكروفون متصل. يرجى التأكد من توصيل الميكروفون.");
-        } else {
-          setErrorMessage(`خطأ في الوصول إلى الميكروفون: ${audioError.message}`);
+      if (requestMic) {
+        console.log("Requesting microphone access...");
+        try {
+          await audioHandlerRef.current.startCapture();
+          setIsMicCaptured(true);
+          console.log("Microphone access granted.");
+        } catch (audioError: any) {
+          console.error("Microphone access error:", audioError);
+          const isPermissionError = audioError.name === 'NotAllowedError' || 
+                                  audioError.name === 'SecurityError' ||
+                                  audioError.message?.toLowerCase().includes('permission denied');
+          
+          if (isPermissionError) {
+            setErrorMessage("تم رفض الوصول للميكروفون. يرجى الضغط على أيقونة القفل بجوار رابط الموقع في المتصفح والتأكد من تفعيل الميكروفون (Microphone: Allow).");
+          } else if (audioError.name === 'NotFoundError') {
+            setErrorMessage("لم يتم العثور على ميكروفون متصل. يرجى التأكد من توصيل الميكروفون.");
+          } else {
+            setErrorMessage(`خطأ في الوصول إلى الميكروفون: ${audioError.message}`);
+          }
+          setStatus('error');
+          return;
         }
-        setStatus('error');
-        return;
       }
 
-      const apiKey = HARDCODED_API_KEY || process.env.API_KEY || process.env.GEMINI_API_KEY;
+      const apiKey = userApiKey || HARDCODED_API_KEY || process.env.API_KEY || process.env.GEMINI_API_KEY;
       if (!apiKey) {
-        setErrorMessage("يرجى وضع المفتاح البرمجي (API Key) في الكود أو اختياره للمتابعة.");
-        if (window.aistudio) await window.aistudio.openSelectKey();
+        setErrorMessage("يرجى إدخال مفتاح (API Key) خاص بك أو اختياره للمتابعة.");
+        setShowKeyModal(true);
         return;
       }
 
@@ -286,23 +341,26 @@ export default function App() {
       const sessionPromise = ai.live.connect({
         model: MODEL_NAME,
         config: {
-          responseModalities: [Modality.AUDIO],
-          speechConfig: {
-            voiceConfig: { prebuiltVoiceConfig: { voiceName: "Zephyr" } },
+          generationConfig: {
+            responseModalities: [Modality.AUDIO],
+            speechConfig: {
+              voiceConfig: { prebuiltVoiceConfig: { voiceName: "Zephyr" } },
+            },
           },
-          systemInstruction: SYSTEM_INSTRUCTION,
-          inputAudioTranscription: {},
-          outputAudioTranscription: {},
+          systemInstruction: {
+            parts: [{ text: SYSTEM_INSTRUCTION }]
+          },
           tools: [
-            { googleSearch: {} },
             { functionDeclarations: [
               GET_MEDIA_CONTENT_TOOL as any, 
               GET_COLLEGE_INFO_TOOL as any,
               GET_CACHED_ANSWER_TOOL as any,
               SAVE_QUESTION_ANSWER_TOOL as any
             ] }
-          ] as any,
-        },
+          ],
+          inputAudioTranscription: {},
+          outputAudioTranscription: {}
+        } as any,
         callbacks: {
           onopen: () => {
             console.log("Live API connection opened.");
@@ -310,22 +368,68 @@ export default function App() {
             setIsActive(true);
           },
           onmessage: async (message: LiveServerMessage) => {
-            // Handle audio output
-            const base64Audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
-            if (base64Audio) {
-              setIsSpeaking(true);
-              audioHandlerRef.current?.playChunk(base64Audio);
+            // Debug the message structure in console
+            console.log("Live Message Received:", JSON.stringify(message).substring(0, 500));
+
+            // Handle model content
+            const modelTurn = message.serverContent?.modelTurn;
+            if (modelTurn) {
+              const parts = modelTurn.parts;
+              if (parts) {
+                // Whenever we get a model turn, it's responding
+                setIsSpeaking(true);
+                
+                for (const part of parts) {
+                  // Handle audio output (if not suppressed)
+                  if (part.inlineData?.data && !suppressAudioRef.current) {
+                    audioHandlerRef.current?.playChunk(part.inlineData.data);
+                  }
+                  
+                  // Handle text output (transcription or direct text)
+                  if (part.text) {
+                    console.log("Found text part in parts:", part.text);
+                    responseBuildingRef.current += part.text;
+                    setCurrentResponse(responseBuildingRef.current);
+                  }
+                }
+              }
+              
+              // Direct text fallback (some versions use top level text)
+              const directText = (modelTurn as any).text;
+              if (directText && !responseBuildingRef.current.includes(directText)) {
+                console.log("Found direct text in modelTurn:", directText);
+                responseBuildingRef.current += directText;
+                setCurrentResponse(responseBuildingRef.current);
+              }
+            }
+            
+            // Check for transcription in other parts of the message
+            const transcription = (message as any).serverContent?.modelTurn?.text || 
+                                (message as any).serverContent?.modelTurn?.parts?.[0]?.text;
+            
+            if (transcription && !responseBuildingRef.current.includes(transcription)) {
+               console.log("Found transcription in fallback check:", transcription);
+               responseBuildingRef.current = transcription;
+               setCurrentResponse(transcription);
             }
 
             // Handle interruption
             if (message.serverContent?.interrupted) {
               audioHandlerRef.current?.clearPlayback();
               setIsSpeaking(false);
+              responseBuildingRef.current = '';
+              setCurrentResponse('');
             }
 
             // Handle turn complete
             if (message.serverContent?.turnComplete) {
               setIsSpeaking(false);
+              if (responseBuildingRef.current.trim()) {
+                const finalResponse = responseBuildingRef.current;
+                setTranscript(prev => [...prev.slice(-20), { role: 'model', text: finalResponse }]);
+                responseBuildingRef.current = '';
+                setCurrentResponse('');
+              }
             }
 
             // Handle tool calls
@@ -333,102 +437,56 @@ export default function App() {
             if (toolCalls) {
               console.log("Received Tool Calls:", toolCalls);
               setIsSearching(true);
-              for (const call of toolCalls) {
-                try {
-                  const session = await sessionPromise;
-                  if (call.name === "get_media_content") {
-                    const queryStr = (call.args as any).query;
-                    console.log("Executing Tool: get_media_content for", queryStr);
-                    const data = await getMediaByQuery(queryStr);
-                    let resultMsg = "لم يتم العثور على وسائط لهذا البحث في قاعدة البيانات.";
-                    if (data && Array.isArray(data)) {
-                      setMediaContent(data.map(item => ({
-                        type: item.type as 'image' | 'video',
-                        url: item.url,
-                        title: item.title
-                      })));
-                      resultMsg = data.map(item => `تم العثور على ${item.type === 'image' ? 'صورة' : 'فيديو'} بعنوان "${item.title}" وعرضه للمستخدم بنجاح.`).join('\n');
-                    }
-                    session.sendToolResponse({
-                      functionResponses: [{
-                        name: "get_media_content",
-                        id: call.id,
-                        response: { result: resultMsg }
-                      }]
-                    });
-                  } else if (call.name === "get_college_info") {
-                    const queryText = (call.args as any).query || (call.args as any).category;
-                    console.log("Executing Tool: get_college_info for", queryText);
-                    const data = await getCollegeInfoByQuery(queryText);
-                    let resultMsg = "لم يتم العثور على معلومات نصية لهذه الفئة في قاعدة البيانات.";
-                    if (data && Array.isArray(data)) {
-                      resultMsg = data.map(item => `الفئة: ${item.category}\nالمحتوى: ${item.content}`).join('\n\n');
-                    }
-                    session.sendToolResponse({
-                      functionResponses: [{
-                        name: "get_college_info",
-                        id: call.id,
-                        response: { result: resultMsg }
-                      }]
-                    });
-                  } else if (call.name === "get_cached_answer") {
-                    const question = (call.args as any).question;
-                    console.log("Executing Tool: get_cached_answer for", question);
-                    const data = await getCachedQuestion(question);
-                    let resultMsg = "لم يتم العثور على إجابة سابقة لهذا السؤال.";
-                    if (data) {
-                      resultMsg = `تم العثور على إجابة سابقة: ${data.answer}`;
-                    }
-                    session.sendToolResponse({
-                      functionResponses: [{
-                        name: "get_cached_answer",
-                        id: call.id,
-                        response: { result: resultMsg }
-                      }]
-                    });
-                  } else if (call.name === "save_question_answer") {
-                    const { question, answer } = call.args as any;
-                    console.log("Executing Tool: save_question_answer");
-                    await addCachedQuestion(question, answer);
-                    session.sendToolResponse({
-                      functionResponses: [{
-                        name: "save_question_answer",
-                        id: call.id,
-                        response: { result: "تم حفظ السؤال والإجابة بنجاح في الإحصائيات." }
-                      }]
-                    });
-                  }
-                } catch (err) {
-                  console.error(`Error in tool ${call.name}:`, err);
-                }
-              }
-              setIsSearching(false);
-            }
+              
+              const executeAndRespond = async () => {
+                const session = await sessionPromise;
+                const functionResponses = [];
 
-            // Handle model transcription
-            const modelParts = message.serverContent?.modelTurn?.parts;
-            if (modelParts) {
-              const modelText = modelParts.map(p => p.text).filter(Boolean).join(' ');
-              if (modelText.trim()) {
-                setTranscript(prev => [...prev.slice(-10), { role: 'model', text: modelText }]);
-              }
+                for (const call of toolCalls) {
+                  const resultMsg = await handleTool(call.name, call.args);
+                  functionResponses.push({
+                    name: call.name,
+                    id: call.id,
+                    response: { result: resultMsg }
+                  });
+                }
+
+                if (functionResponses.length > 0) {
+                  session.sendToolResponse({ functionResponses });
+                }
+                setIsSearching(false);
+              };
+
+              executeAndRespond();
             }
 
             // Handle user transcription
             const userText = message.serverContent?.inputTranscription?.text;
             if (userText) {
               console.log("User said:", userText);
+              setTranscript(prev => [...prev.slice(-20), { role: 'user', text: userText }]);
             }
           },
           onerror: (error: any) => {
             console.error("Live API Error:", error);
             setStatus('error');
             
-            if (error?.message?.includes('Requested entity was not found')) {
+            // Log specific error codes for debugging
+            const errorMsg = error?.message || "";
+            if (errorMsg.includes('409') || errorMsg.includes('Conflict')) {
+              console.error("CRITICAL: 409 Conflict detected. Multiple concurrent connections for the same API key.");
+              setErrorMessage("خطأ في الاتصال (Conflict): يبدو أن هناك جلسة أخرى مفتوحة بنفس المفتاح. يرجى الانتظار دقيقة أو التأكد من إغلاق جميع التبويبات الأخرى.");
+            } else if (errorMsg.includes('429') || errorMsg.includes('quota') || errorMsg.includes('RESOURCE_EXHAUSTED')) {
+              setErrorMessage("نفذت حصة الاستخدام (Quota) المخصصة للتطبيق حالياً. يرجى إدخال مفتاح API الخاص بك للمتابعة بدون انقطاع.");
+              setShowKeyModal(true);
+            } else if (errorMsg.includes('403') || errorMsg.includes('Forbidden')) {
+              console.error("CRITICAL: 403 Forbidden detected. API Key might be invalid, restricted, or quota exceeded.");
+              setErrorMessage("خطأ في الصلاحيات (Forbidden): المفتاح البرمجي غير صالح أو تخطى الحصص المتاحة.");
+            } else if (errorMsg.includes('Requested entity was not found')) {
               setErrorMessage("المفتاح البرمجي غير صالح أو لم يتم اختياره. يرجى إعادة اختيار مفتاح برمجي من مشروع مدفوع.");
               setHasApiKey(false);
             } else if (error?.message?.includes('Network error')) {
-              setErrorMessage("حدث خطأ في الشبكة. يرجى التأكد من اتصالك بالإنترنت.");
+              setErrorMessage("خطأ في الشبكة: يرجى التأكد من اتصال الإنترنت أو تجربة تحديث الصفحة. قد يكون ذلك بسبب قيود الخصوصية في المتصفح.");
             } else if (error?.message?.includes('service is currently unavailable')) {
               setErrorMessage("الخدمة غير متوفرة حالياً. يرجى المحاولة مرة أخرى بعد قليل.");
             } else {
@@ -464,19 +522,43 @@ export default function App() {
     sessionRef.current?.close();
     sessionRef.current = null;
     setIsActive(false);
+    setIsMicCaptured(false);
     setStatus('idle');
     setIsSpeaking(false);
   };
 
+  const activateMic = async () => {
+    if (!audioHandlerRef.current) return;
+    try {
+      await audioHandlerRef.current.startCapture();
+      setIsMicCaptured(true);
+      setErrorMessage(null);
+    } catch (err: any) {
+      console.error("Failed to activate mic:", err);
+      setErrorMessage("تعذر تفعيل الميكروفون: " + err.message);
+    }
+  };
+
+  const deactivateMic = () => {
+    audioHandlerRef.current?.stopCapture();
+    setIsMicCaptured(false);
+  };
+
   const toggleSession = async () => {
     if (isActive) {
-      stopSession();
+      if (isMicCaptured) {
+        deactivateMic();
+      } else {
+        await activateMic();
+      }
     } else {
-      await startSession();
+      suppressAudioRef.current = false;
+      await startSession(true);
     }
   };
 
   const handleQuickAction = (query: string) => {
+    suppressAudioRef.current = false;
     if (isActive && sessionRef.current) {
       sessionRef.current.sendRealtimeInput({
         text: query
@@ -492,6 +574,55 @@ export default function App() {
         }, 500);
       });
     }
+  };
+
+  // Helper to execute tools
+  const handleTool = async (name: string, args: any) => {
+    console.log(`Executing Tool: ${name}`, args);
+    let resultMsg = "حدث خطأ غير متوقع أثناء تنفيذ الأداة.";
+    
+    try {
+      if (name === "get_media_content") {
+        const queryStr = args.query;
+        const data = await getMediaByQuery(queryStr);
+        resultMsg = "لم يتم العثور على وسائط لهذه الفئة.";
+        if (data && Array.isArray(data)) {
+          const newMediaItems = data.map(item => ({
+            type: item.type as 'image' | 'video',
+            url: item.url,
+            title: item.title
+          }));
+          
+          // Add to transcript
+          setTranscript(prev => [
+            ...prev,
+            ...newMediaItems.map(item => ({ role: 'model' as const, media: item }))
+          ]);
+
+          resultMsg = data.map(item => `تم العثور على ${item.type === 'image' ? 'صورة' : 'فيديو'} بعنوان "${item.title}" وعرضه للمستخدم.`).join('\n');
+        }
+      } else if (name === "get_college_info") {
+        const queryText = args.query || args.category;
+        const data = await getCollegeInfoByQuery(queryText);
+        resultMsg = "لم يتم العثور على معلومات نصية لهذه الفئة.";
+        if (data && Array.isArray(data)) {
+          resultMsg = data.map(item => `الفئة: ${item.category}\nالمحتوى: ${item.content}`).join('\n\n');
+        }
+      } else if (name === "get_cached_answer") {
+        const question = args.question;
+        const data = await getCachedQuestion(question);
+        resultMsg = data ? `تم العثور على إجابة سابقة: ${data.answer}` : "لم يتم العثور على إجابة سابقة.";
+      } else if (name === "save_question_answer") {
+        const { question, answer } = args;
+        await addCachedQuestion(question, answer);
+        resultMsg = "تم حفظ الإجابة بنجاح في قاعدة البيانات.";
+      }
+    } catch (err) {
+      console.error(`Tool Execution Error (${name}):`, err);
+      resultMsg = `خطأ أثناء تنفيذ الأداة: ${err instanceof Error ? err.message : String(err)}`;
+    }
+    
+    return resultMsg;
   };
 
   const handleAdminAuth = () => {
@@ -514,11 +645,182 @@ export default function App() {
     }
   };
 
+  const handleSendText = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!chatInput.trim()) return;
+
+    const textToSend = chatInput.trim();
+    setChatInput('');
+    
+    // Interrupt any ongoing audio
+    audioHandlerRef.current?.clearPlayback();
+    setIsSpeaking(false);
+    
+    // Add user message to transcript immediately
+    setTranscript(prev => [...prev.slice(-20), { role: 'user', text: textToSend }]);
+
+    if (isActive && sessionRef.current) {
+      // IF mic is active, use the Live path (but silent)
+      suppressAudioRef.current = true;
+      sessionRef.current.sendRealtimeInput({ text: textToSend });
+    } else {
+      // FAST PATH: Use generativeContent for immediate text-only response
+      setIsAiThinking(true);
+      try {
+        const apiKey = userApiKey || HARDCODED_API_KEY || process.env.API_KEY || process.env.GEMINI_API_KEY;
+        if (!apiKey) {
+          setErrorMessage("يرجى إدخال مفتاح (API Key) للمتابعة.");
+          setShowKeyModal(true);
+          setIsAiThinking(false);
+          return;
+        }
+
+        const ai = new GoogleGenAI({ apiKey });
+        
+        // Build history-aware context (last 10 turns)
+        const historyContext: any[] = transcript
+          .slice(-10)
+          .filter(t => t.text) // Ensure only entries with text are sent as history
+          .map(t => ({
+            role: t.role,
+            parts: [{ text: t.text }]
+          }));
+        
+        let messages: any[] = [...historyContext, { role: 'user', parts: [{ text: textToSend }] }];
+        let finalResponse = "";
+
+        // Retry wrapper for generateContent to handle 429s (Quota)
+        const generateWithRetry = async (payload: any, maxRetries = 2) => {
+          for (let attempt = 0; attempt <= maxRetries; attempt++) {
+            try {
+              return await ai.models.generateContent(payload);
+            } catch (error: any) {
+              const msg = error?.message || "";
+              const isQuota = msg.includes("429") || msg.includes("quota") || msg.includes("RESOURCE_EXHAUSTED");
+              if (isQuota && attempt < maxRetries) {
+                const delay = Math.pow(2, attempt) * 2000; // 2s, 4s
+                console.warn(`Quota exhausted. Retrying in ${delay}ms...`);
+                await new Promise(r => setTimeout(r, delay));
+                continue;
+              }
+              throw error;
+            }
+          }
+        };
+
+        // Loop for function calling (max 5 iterations)
+        for (let i = 0; i < 5; i++) {
+          const response: any = await generateWithRetry({
+            model: "gemini-3-flash-preview",
+            contents: messages,
+            config: {
+              systemInstruction: SYSTEM_INSTRUCTION,
+              thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
+              tools: [
+                { functionDeclarations: [
+                  GET_MEDIA_CONTENT_TOOL as any, 
+                  GET_COLLEGE_INFO_TOOL as any,
+                  GET_CACHED_ANSWER_TOOL as any,
+                  SAVE_QUESTION_ANSWER_TOOL as any
+                ] }
+              ]
+            }
+          });
+
+          const toolCalls = response.functionCalls;
+          if (toolCalls && toolCalls.length > 0) {
+            setIsSearching(true);
+            const toolResponses = [];
+            
+            // Add model's complete response to history to preserve thought signatures
+            const modelContent = response.candidates?.[0]?.content;
+            if (modelContent) {
+              messages.push(modelContent);
+            }
+
+            for (const call of toolCalls) {
+              const result = await handleTool(call.name, call.args);
+              toolResponses.push({
+                functionResponse: {
+                  name: call.name,
+                  id: call.id,
+                  response: { result }
+                }
+              });
+            }
+            
+            // Add our responses to history
+            messages.push({ role: 'user', parts: toolResponses });
+            setIsSearching(false);
+          } else {
+            // Robust text extraction
+            finalResponse = response.text || "";
+            
+            // Fallback if .text is empty but parts exist
+            if (!finalResponse && response.candidates?.[0]?.content?.parts) {
+              finalResponse = response.candidates[0].content.parts
+                .filter(p => p.text)
+                .map(p => p.text)
+                .join(" ");
+            }
+
+            if (!finalResponse) {
+               finalResponse = "عذراً، لم أستطع توليد رد نصي حالياً. حاول إعادة صياغة السؤال.";
+            }
+            break;
+          }
+        }
+
+        if (finalResponse) {
+          setTranscript(prev => [...prev.slice(-20), { role: 'model', text: finalResponse }]);
+        }
+      } catch (err: any) {
+        console.error("Static Chat Error:", err);
+        const errorMsg = typeof err === 'string' ? err : (err.message || JSON.stringify(err));
+        
+        if (errorMsg.includes("429") || errorMsg.includes("quota") || errorMsg.includes("RESOURCE_EXHAUSTED")) {
+          setErrorMessage("نفذت حصة الاستخدام (Quota) المخصصة للتطبيق حالياً. يرجى إدخال مفتاح API الخاص بك للمتابعة بدون انقطاع.");
+          setShowKeyModal(true);
+        } else if (errorMsg.includes("403") || errorMsg.includes("permission") || errorMsg.includes("PERMISSION_DENIED")) {
+          setErrorMessage("خطأ في الصلاحيات (Permission Denied): يبدو أن المفتاح الحالي لا يملك صلاحية الوصول لهذا الموديل. يرجى إدخال مفتاح API الخاص بك.");
+          setShowKeyModal(true);
+        } else {
+          setErrorMessage("حدث خطأ في الاتصال بالذكاء الاصطناعي، يرجى المحاولة مرة أخرى.");
+        }
+      } finally {
+        setIsAiThinking(false);
+      }
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#0a0502] text-white font-sans selection:bg-orange-500/30 relative overflow-hidden flex items-center justify-center" dir="rtl">
       <AnimatePresence>
-        {showSplash && <SplashScreen onComplete={() => setShowSplash(false)} />}
+        {showSplash && <SplashScreen onComplete={() => {
+          setShowSplash(false);
+          setShowIdleVideo(true); // Show video initially after splash
+        }} />}
       </AnimatePresence>
+
+      <AnimatePresence>
+        {showIdleVideo && (
+          <IdleVideoOverlay onDismiss={() => setShowIdleVideo(false)} />
+        )}
+      </AnimatePresence>
+
+      <ApiKeyModal 
+        isOpen={showKeyModal}
+        onClose={() => setShowKeyModal(false)}
+        currentKey={userApiKey}
+        onSave={(key) => {
+          setUserApiKey(key);
+          if (key) {
+            localStorage.setItem('gemini_user_api_key', key);
+          } else {
+            localStorage.removeItem('gemini_user_api_key');
+          }
+        }}
+      />
 
       {/* Mobile Frame Container */}
       <div className="w-full h-full max-w-md bg-[#0a0502] relative overflow-hidden flex flex-col shadow-2xl md:rounded-[3rem] md:border-[8px] md:border-[#1a1a1a] md:h-[850px] md:my-8">
@@ -542,6 +844,13 @@ export default function App() {
               </div>
             </div>
             <div className="flex items-center gap-2">
+              <button 
+                onClick={() => setShowKeyModal(true)}
+                title="إعدادات المفتاح"
+                className="p-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all"
+              >
+                <Key size={18} className={userApiKey ? "text-orange-500" : "text-white/60"} />
+              </button>
               <button 
                 onClick={handleAdminAuth}
                 className="p-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all"
@@ -588,7 +897,14 @@ export default function App() {
                     exit={{ opacity: 0, scale: 0.95 }}
                     className="space-y-6"
                   >
-                    <div className="space-y-2">
+                    <div className="space-y-4">
+                      <p className="text-xs text-white/60 font-medium font-cairo text-center">
+                        الحالة الحالية: {userApiKey ? (
+                          <span className="text-orange-500 font-bold">تستخدم مفتاحك الشخصي ✅</span>
+                        ) : (
+                          <span className="text-amber-500">تستخدم مفتاح الموقع الافتراضي 🌐</span>
+                        )}
+                      </p>
                       <h2 className="text-4xl font-black tracking-tighter leading-none text-glow">
                         أهلاً بك في <br />
                         <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-orange-600 italic">المساعد الذكي</span>
@@ -639,58 +955,8 @@ export default function App() {
               </AnimatePresence>
             </div>
 
-            {/* Media Content Display */}
-            <AnimatePresence>
-              {mediaContent.length > 0 && (
-                <div className="mb-6 space-y-4">
-                  {mediaContent.map((item, idx) => (
-                    <motion.div
-                      key={`${item.url}-${idx}`}
-                      initial={{ opacity: 0, scale: 0.9, y: 20 }}
-                      animate={{ opacity: 1, scale: 1, y: 0 }}
-                      exit={{ opacity: 0, scale: 0.9, y: 20 }}
-                      className="relative"
-                    >
-                      <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden shadow-xl">
-                        {item.type === 'image' ? (
-                          <img 
-                            src={item.url} 
-                            alt={item.title} 
-                            className="w-full h-40 object-cover"
-                            referrerPolicy="no-referrer"
-                          />
-                        ) : (
-                          <video 
-                            src={item.url} 
-                            controls 
-                            autoPlay
-                            className="w-full h-40 object-cover"
-                          />
-                        )}
-                        <div className="p-3 bg-black/60 backdrop-blur-sm flex justify-between items-center">
-                          <p className="text-xs font-medium text-white">{item.title}</p>
-                          <button 
-                            onClick={() => setMediaContent(prev => prev.filter((_, i) => i !== idx))}
-                            className="p-1.5 bg-white/10 hover:bg-white/20 rounded-full"
-                          >
-                            <RefreshCcw size={12} className="rotate-45" />
-                          </button>
-                        </div>
-                      </div>
-                    </motion.div>
-                  ))}
-                  {mediaContent.length > 0 && (
-                    <button 
-                      onClick={() => setMediaContent([])}
-                      className="w-full py-2 text-[10px] text-white/40 hover:text-white/60 uppercase tracking-widest font-bold transition-colors"
-                    >
-                      إغلاق كل الوسائط
-                    </button>
-                  )}
-                </div>
-              )}
-            </AnimatePresence>
-
+            {/* Media Content integrated into Transcript */}
+            
             {/* Transcript Area */}
             <div className="flex-1 py-4 space-y-4">
               <AnimatePresence initial={false}>
@@ -699,13 +965,87 @@ export default function App() {
                     key={i}
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="flex justify-start"
+                    className={`flex ${item.role === 'user' ? 'justify-end' : 'justify-start'}`}
                   >
-                    <div className="max-w-[90%] px-4 py-3 rounded-2xl text-sm shadow-lg backdrop-blur-xl border bg-white/10 border-white/20 text-white/90 rounded-tl-none">
-                      <p className="leading-relaxed font-cairo">{item.text}</p>
+                    <div className={`max-w-[85%] overflow-hidden rounded-2xl text-sm shadow-lg backdrop-blur-xl border ${
+                      item.role === 'user' 
+                        ? 'bg-orange-500/20 border-orange-500/30 text-white rounded-tr-none px-4 py-3' 
+                        : 'bg-white/10 border-white/20 text-white/90 rounded-tl-none p-1'
+                    }`}>
+                      {item.text && <div className={item.role === 'user' ? '' : 'px-3 py-2'}><p className="leading-relaxed font-cairo">{item.text}</p></div>}
+                      {item.media && (
+                        <div className="flex flex-col">
+                           {item.media.type === 'image' ? (
+                             <img 
+                               src={item.media.url} 
+                               alt={item.media.title} 
+                               className="rounded-xl w-full max-h-[300px] object-cover" 
+                               referrerPolicy="no-referrer" 
+                             />
+                           ) : (
+                             <video 
+                               src={item.media.url} 
+                               controls 
+                               className="rounded-xl w-full max-h-[300px] object-cover" 
+                             />
+                           )}
+                           <div className="px-3 py-2 bg-black/40 backdrop-blur-sm">
+                             <p className="text-[10px] text-white/70 font-medium font-cairo truncate">{item.media.title}</p>
+                           </div>
+                        </div>
+                      )}
                     </div>
                   </motion.div>
                 ))}
+                
+                {/* Typing Indicator */}
+                {(isSpeaking || isAiThinking) && !currentResponse && !isSearching && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="flex justify-start"
+                  >
+                    <div className="bg-white/5 border border-white/10 px-4 py-2 rounded-2xl flex gap-1 items-center">
+                      <motion.div animate={{ scale: [1, 1.2, 1] }} transition={{ repeat: Infinity, duration: 0.6 }} className="w-1 h-1 bg-white/40 rounded-full" />
+                      <motion.div animate={{ scale: [1, 1.2, 1] }} transition={{ repeat: Infinity, duration: 0.6, delay: 0.2 }} className="w-1 h-1 bg-white/40 rounded-full" />
+                      <motion.div animate={{ scale: [1, 1.2, 1] }} transition={{ repeat: Infinity, duration: 0.6, delay: 0.4 }} className="w-1 h-1 bg-white/40 rounded-full" />
+                    </div>
+                  </motion.div>
+                )}
+
+                {/* Streaming Response Bubble */}
+                {currentResponse && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="flex justify-start"
+                  >
+                    <div className="max-w-[85%] px-4 py-3 rounded-2xl text-sm shadow-lg backdrop-blur-xl border bg-white/10 border-white/20 text-white/90 rounded-tl-none">
+                      <p className="leading-relaxed font-cairo">
+                        {currentResponse}
+                        <span className="inline-block w-1.5 h-4 bg-orange-500 ml-1 animate-pulse align-middle" />
+                      </p>
+                    </div>
+                  </motion.div>
+                )}
+
+                {/* Searching Indicator */}
+                {isSearching && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="flex justify-start"
+                  >
+                    <div className="flex items-center gap-2 px-4 py-2 bg-white/5 rounded-full border border-white/10">
+                      <div className="flex gap-1">
+                        <motion.div animate={{ opacity: [0.3, 1, 0.3] }} transition={{ repeat: Infinity, duration: 1 }} className="w-1.5 h-1.5 bg-orange-500 rounded-full" />
+                        <motion.div animate={{ opacity: [0.3, 1, 0.3] }} transition={{ repeat: Infinity, duration: 1, delay: 0.2 }} className="w-1.5 h-1.5 bg-orange-500 rounded-full" />
+                        <motion.div animate={{ opacity: [0.3, 1, 0.3] }} transition={{ repeat: Infinity, duration: 1, delay: 0.4 }} className="w-1.5 h-1.5 bg-orange-500 rounded-full" />
+                      </div>
+                      <span className="text-[10px] text-white/40 font-bold font-cairo">جاري البحث في بيانات الكلية...</span>
+                    </div>
+                  </motion.div>
+                )}
               </AnimatePresence>
               <div ref={transcriptEndRef} />
             </div>
@@ -720,19 +1060,67 @@ export default function App() {
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: 10 }}
-                  className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-center"
+                  className="p-4 bg-red-500/10 border border-red-500/20 rounded-2xl text-center space-y-3"
                 >
-                  <p className="text-[10px] text-red-500 font-medium font-cairo">{errorMessage}</p>
+                  <p className="text-xs text-red-500 font-medium font-cairo leading-relaxed">{errorMessage}</p>
+                  <div className="flex justify-center flex-wrap gap-2">
+                    <button 
+                      onClick={toggleSession}
+                      className="text-[10px] bg-red-500/20 hover:bg-red-500/30 text-red-500 px-4 py-1.5 rounded-full transition-all font-bold"
+                    >
+                      إعادة المحاولة
+                    </button>
+                    {(errorMessage?.includes('الميكروفون') || errorMessage?.includes('Permission denied')) && (
+                      <span className="text-[10px] text-white/40 font-cairo py-1.5 px-2">
+                        يرجى تفعيل الميكروفون من إعدادات المتصفح
+                      </span>
+                    )}
+                    {(errorMessage?.includes('الشبكة') || errorMessage?.includes('الاتصال')) && (
+                      <button 
+                        onClick={() => startSession(!suppressAudioRef.current)}
+                        className="text-[10px] bg-orange-600/20 hover:bg-orange-600/40 text-orange-400 px-4 py-1.5 rounded-full transition-all font-bold"
+                      >
+                        إعادة المحاولة
+                      </button>
+                    )}
+                    <button 
+                      onClick={() => window.aistudio?.openSelectKey()}
+                      className="text-[10px] bg-white/10 hover:bg-white/20 text-white px-4 py-1.5 rounded-full transition-all font-bold"
+                    >
+                      تغيير المفتاح
+                    </button>
+                  </div>
                 </motion.div>
               )}
             </AnimatePresence>
 
             <div className="flex flex-col items-center gap-6">
+              {/* Chat Input Area */}
+              <form 
+                onSubmit={handleSendText}
+                className="w-full flex items-center gap-2 bg-white/5 border border-white/10 rounded-2xl p-2 focus-within:border-orange-500/50 transition-all bg-black/20"
+              >
+                <input 
+                  type="text"
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  placeholder="اسألني أي سؤال كتابة..."
+                  className="flex-1 bg-transparent border-none outline-none px-3 py-2 text-sm font-cairo placeholder:text-white/20"
+                />
+                <button 
+                  type="submit"
+                  disabled={!chatInput.trim() || status === 'connecting'}
+                  className="p-2 bg-orange-600 hover:bg-orange-700 disabled:opacity-30 disabled:hover:bg-orange-600 rounded-xl transition-all shadow-lg shadow-orange-600/20"
+                >
+                  <Send size={18} />
+                </button>
+              </form>
+
               <button
                 onClick={toggleSession}
                 disabled={status === 'connecting'}
                 className={`group relative w-16 h-16 rounded-full flex items-center justify-center transition-all duration-500 ${
-                  isActive 
+                  isMicCaptured 
                     ? 'bg-white text-black scale-110 shadow-[0_0_30px_rgba(255,255,255,0.3)]' 
                     : 'bg-orange-600 text-white hover:scale-105 shadow-[0_0_20px_rgba(234,88,12,0.3)]'
                 } disabled:opacity-50`}
@@ -743,13 +1131,13 @@ export default function App() {
                     transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
                     className="w-6 h-6 border-2 border-current border-t-transparent rounded-full"
                   />
-                ) : isActive ? (
-                  <MicOff size={28} />
-                ) : (
+                ) : isMicCaptured ? (
                   <Mic size={28} />
+                ) : (
+                  <MicOff size={28} />
                 )}
                 
-                {isActive && (
+                {isMicCaptured && (
                   <motion.div
                     initial={{ scale: 1, opacity: 0.5 }}
                     animate={{ scale: 1.4, opacity: 0 }}
@@ -1009,6 +1397,75 @@ function NavIcon({ icon, label, onClick }: { icon: React.ReactNode, label: strin
       <div className="text-orange-500">{icon}</div>
       <span className="text-[9px] font-bold text-white/60 font-cairo">{label}</span>
     </button>
+  );
+}
+
+function ApiKeyModal({ isOpen, onClose, currentKey, onSave }: { isOpen: boolean, onClose: () => void, currentKey: string, onSave: (key: string) => void }) {
+  const [keyInput, setKeyInput] = useState(currentKey);
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[300] flex items-center justify-center p-6 bg-black/80 backdrop-blur-xl">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.9, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        className="w-full max-w-sm bg-[#151619] border border-white/10 rounded-[2.5rem] p-8 space-y-8 relative overflow-hidden shadow-2xl"
+      >
+        <div className="absolute top-0 right-0 w-32 h-32 bg-orange-600/10 blur-3xl -z-10" />
+        <div className="flex justify-between items-center">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-orange-600/20 rounded-xl">
+              <Key size={18} className="text-orange-500" />
+            </div>
+            <h3 className="text-xl font-bold tracking-tight font-cairo">مفتاح API الخاص بك</h3>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-white/5 rounded-full transition-colors text-white/40">
+            <X size={20} />
+          </button>
+        </div>
+        
+        <div className="space-y-4">
+          <p className="text-xs text-white/40 leading-relaxed font-cairo text-right">
+            لكي يعمل التطبيق بشكل مستقر ومنع نفاذ الحصص المجانية، يرجى إدخال مفتاح Gemini API الخاص بك. سيتم حفظ المفتاح محلياً في متصفحك فقط.
+          </p>
+          <div className="space-y-2">
+            <input 
+              type="password"
+              value={keyInput}
+              onChange={(e) => setKeyInput(e.target.value)}
+              placeholder="أدخل مفتاحك هنا... (AIza...)"
+              className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-sm focus:border-orange-600 outline-none transition-all placeholder:text-white/20 font-mono text-center"
+            />
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-3 pt-2">
+          <button 
+            onClick={() => {
+              onSave(keyInput);
+              onClose();
+            }}
+            className="w-full py-4 bg-orange-600 hover:bg-orange-700 text-white font-bold rounded-2xl transition-all shadow-lg shadow-orange-600/20 font-cairo"
+          >
+            حفظ المفتاح
+          </button>
+          <button 
+            onClick={() => {
+              onSave('');
+              setKeyInput('');
+            }}
+            className="w-full py-4 bg-white/5 hover:bg-white/10 text-white/60 text-xs font-bold rounded-2xl transition-all font-cairo"
+          >
+            مسح المفتاح المحفوظ
+          </button>
+        </div>
+
+        <p className="text-[10px] text-center text-white/20">
+          يمكنك الحصول على مفتاح مجاني من <a href="https://aistudio.google.com/app/apikey" target="_blank" className="text-orange-500/60 hover:text-orange-500 underline">Google AI Studio</a>
+        </p>
+      </motion.div>
+    </div>
   );
 }
 
