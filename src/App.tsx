@@ -74,8 +74,6 @@ declare global {
 
 // يمكنك وضع مفتاح Gemini API الخاص بك هنا مباشرة
 const HARDCODED_API_KEY = ""; 
-
-const LOGO_URL = "https://i.imgur.com/your-logo-id.png"; // سيقوم المستخدم باستبدال هذا برابط الصورة المرفوعة
 const LOGO_URL = "https://i.top4top.io/p_3757qb3cg0.png"; // سيقوم المستخدم باستبدال هذا برابط الصورة المرفوعة
 import { motion } from 'framer-motion';
 import { motion } from 'framer-motion';
@@ -168,6 +166,7 @@ const SplashScreen = ({ onComplete }: { onComplete: () => void }) => {
     </motion.div>
   );
 };
+
 
 
 export default function App() {
