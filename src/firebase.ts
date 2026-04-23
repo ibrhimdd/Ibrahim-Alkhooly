@@ -35,6 +35,7 @@ export interface FirestoreErrorInfo {
   error: string;
   operationType: OperationType;
   path: string | null;
+  databaseId: string;
   authInfo: {
     userId: string | undefined;
     email: string | null | undefined;
@@ -67,7 +68,8 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
       })) || []
     },
     operationType,
-    path
+    path,
+    databaseId: firebaseConfig.firestoreDatabaseId
   }
   console.error('Firestore Error: ', JSON.stringify(errInfo));
   throw new Error(JSON.stringify(errInfo));
@@ -241,6 +243,7 @@ export async function deleteCollegeInfoByCategory(category: string) {
     const snapshot = await getDocs(q);
     const deletePromises = snapshot.docs.map(d => deleteDoc(doc(db, path, d.id)));
     await Promise.all(deletePromises);
+    invalidateCache(path);
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
   }
@@ -343,12 +346,11 @@ export async function getCollegeInfoByQuery(searchQuery: string) {
   }
 }
 
-// Admin functions to list all items
+// Admin functions to list all items (now using cache for speed)
 export async function getAllMedia() {
   const path = 'media';
   try {
-    const snapshot = await getDocs(collection(db, path));
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    return await getCachedDocs(path);
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, path);
     return [];
@@ -358,8 +360,7 @@ export async function getAllMedia() {
 export async function getAllCollegeInfo() {
   const path = 'college_info';
   try {
-    const snapshot = await getDocs(collection(db, path));
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    return await getCachedDocs(path);
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, path);
     return [];

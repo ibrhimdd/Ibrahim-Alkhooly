@@ -74,100 +74,85 @@ declare global {
 
 // يمكنك وضع مفتاح Gemini API الخاص بك هنا مباشرة
 const HARDCODED_API_KEY = ""; 
-const LOGO_URL = "https://i.top4top.io/p_3757qb3cg0.png"; // سيقوم المستخدم باستبدال هذا برابط الصورة المرفوعة
-import { motion } from 'framer-motion';
-import { motion } from 'framer-motion';
+
+const LOGO_URL = "https://i.imgur.com/your-logo-id.png"; // سيقوم المستخدم باستبدال هذا برابط الصورة المرفوعة
 
 const SplashScreen = ({ onComplete }: { onComplete: () => void }) => {
-  // تقسيم النص إلى كلمات لضمان ترابط الحروف العربية
-  const words = ["النوعية", "التربية", "كلية"];
-
-  const wordVariants = {
-    initial: { y: 20, opacity: 0, filter: "blur(10px)" },
-    animate: { 
-      y: 0, 
-      opacity: 1, 
-      filter: "blur(0px)",
-      transition: { duration: 1, ease: "easeOut" } 
-    }
-  };
-
   return (
     <motion.div
       initial={{ opacity: 1 }}
       animate={{ opacity: 0 }}
-      transition={{ duration: 2, delay: 5, ease: "easeInOut" }}
+      transition={{ duration: 1, delay: 3 }}
       onAnimationComplete={onComplete}
-      className="fixed inset-0 z-[200] bg-[#0c0603] flex flex-col items-center justify-center overflow-hidden"
-      dir="rtl" // التأكد من اتجاه النص من اليمين لليسان
+      className="fixed inset-0 z-[200] bg-[#0a0502] flex flex-col items-center justify-center p-6"
     >
-      {/* الخلفية المضيئة */}
-      <div className="absolute inset-0 overflow-hidden">
-        <motion.div 
-          animate={{ scale: [1, 1.1, 1], opacity: [0.1, 0.3, 0.1] }}
-          transition={{ duration: 10, repeat: Infinity }}
-          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full bg-orange-900/20 blur-[120px] rounded-full" 
-        />
-      </div>
-
-      {/* الشعار */}
       <motion.div
-        initial={{ scale: 0.8, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        transition={{ duration: 1.5, ease: "easeOut" }}
-        className="relative mb-12"
+        initial={{ scale: 0.5, opacity: 0, rotate: -10 }}
+        animate={{ scale: 1, opacity: 1, rotate: 0 }}
+        transition={{ 
+          duration: 1.5, 
+          ease: "easeOut",
+          type: "spring",
+          stiffness: 100
+        }}
+        className="relative"
       >
-        <div className="absolute inset-0 bg-orange-600/20 blur-[60px] rounded-full scale-150 animate-pulse" />
-        <div className="relative z-10 p-6 rounded-[2.5rem] bg-white/[0.03] backdrop-blur-xl border border-white/10 shadow-2xl">
-          <img 
-            src={LOGO_URL} 
-            alt="Logo" 
-            className="w-44 h-44 md:w-56 md:h-56 object-contain drop-shadow-[0_0_20px_rgba(249,115,22,0.4)]"
-          />
-        </div>
+        <div className="absolute inset-0 bg-orange-500/20 blur-3xl rounded-full animate-pulse" />
+        <img 
+          src={LOGO_URL} 
+          alt="Logo" 
+          className="w-48 h-48 object-contain relative z-10"
+          onError={(e) => {
+            // Fallback if logo fails to load
+            (e.target as HTMLImageElement).src = "https://cdn-icons-png.flaticon.com/512/2991/2991148.png";
+          }}
+        />
       </motion.div>
-
-      {/* النصوص - ظهور كلمة بكلمة لضمان الترابط */}
-      <div className="text-center z-10">
-        <motion.div 
-          className="flex flex-row-reverse justify-center gap-3 mb-4" // flex-row-reverse لترتيب الكلمات العربية صح
-          initial="initial"
-          animate="animate"
-          transition={{ staggerChildren: 0.3, delayChildren: 1 }}
-        >
-          {words.map((word, index) => (
-            <motion.span
-              key={index}
-              variants={wordVariants}
-              className="text-4xl md:text-6xl font-black text-white drop-shadow-sm"
-            >
-              {word}
-            </motion.span>
-          ))}
-        </motion.div>
-
-        <motion.p
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 2.5, duration: 1.5 }}
-          className="text-orange-500 font-bold uppercase tracking-[0.3em] text-sm md:text-base border-t border-orange-500/30 pt-4"
-        >
-          جامعة كفر الشيخ
-        </motion.p>
-      </div>
-
-      {/* خط التحميل السفلي */}
-      <motion.div 
-        className="absolute bottom-0 right-0 h-[3px] bg-gradient-to-l from-orange-600 via-orange-400 to-transparent"
-        initial={{ width: 0 }}
-        animate={{ width: "100%" }}
-        transition={{ duration: 6, ease: "easeInOut" }}
-      />
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 1, duration: 1 }}
+        className="mt-8 text-center"
+      >
+        <h1 className="text-3xl font-bold tracking-tight text-glow mb-2">كلية التربية النوعية</h1>
+        <p className="text-orange-500 font-bold uppercase tracking-[0.2em] text-xs">جامعة كفر الشيخ</p>
+      </motion.div>
     </motion.div>
   );
 };
 
+const IDLE_VIDEO_URL = "https://g.top4top.io/m_3764wecfx1.mp4";
 
+const IdleVideoOverlay = ({ onDismiss }: { onDismiss: () => void }) => {
+  return (
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[500] bg-black flex items-center justify-center cursor-pointer"
+      onClick={onDismiss}
+    >
+      <video 
+        src={IDLE_VIDEO_URL} 
+        autoPlay 
+        loop 
+        muted
+        playsInline
+        className="w-full h-full object-cover"
+      />
+      <div className="absolute inset-0 bg-black/20" />
+      <motion.div 
+        initial={{ y: 20, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ delay: 1 }}
+        className="absolute bottom-12 left-1/2 -translate-x-1/2 px-8 py-4 bg-orange-600 hover:bg-orange-700 text-white font-bold rounded-full shadow-2xl shadow-orange-600/40 font-cairo flex items-center gap-3 transition-all active:scale-95"
+      >
+        <RefreshCcw size={18} className="animate-spin-slow" />
+        استكمال المحادثة
+      </motion.div>
+    </motion.div>
+  );
+};
 
 export default function App() {
   const [showSplash, setShowSplash] = useState(true);
@@ -181,6 +166,7 @@ export default function App() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [currentResponse, setCurrentResponse] = useState('');
   const [showAdmin, setShowAdmin] = useState(false);
+  const [isDbConnected, setIsDbConnected] = useState<boolean>(true);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [passwordInput, setPasswordInput] = useState('');
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
@@ -274,8 +260,12 @@ export default function App() {
         console.log("Firestore connection test: Found", media.length, "media items.");
         const info = await getAllCollegeInfo();
         console.log("Firestore connection test: Found", info.length, "info items.");
-      } catch (error) {
+        setIsDbConnected(true);
+        setErrorMessage(null);
+      } catch (error: any) {
         console.error("Firestore connection test failed:", error);
+        setIsDbConnected(false);
+        setErrorMessage(error.message || "فشل الاتصال بقاعدة البيانات");
       }
     };
     testConn();
@@ -1068,6 +1058,20 @@ export default function App() {
 
           {/* Bottom Controls Area */}
           <div className="p-6 bg-gradient-to-t from-black to-transparent space-y-6">
+            {!isDbConnected && (
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="p-3 bg-red-500/20 border border-red-500/50 rounded-2xl flex items-center gap-3 animate-pulse"
+              >
+                <div className="w-2 h-2 bg-red-500 rounded-full" />
+                <div className="flex-1">
+                  <p className="text-[10px] text-red-200 font-bold font-cairo">قاعدة البيانات غير متاحة حالياً، جاري محاولة إعادة الاتصال...</p>
+                  {errorMessage && <p className="text-[8px] text-red-400 font-mono mt-1">{errorMessage}</p>}
+                </div>
+              </motion.div>
+            )}
+
             {/* Error Message Display */}
             <AnimatePresence>
               {errorMessage && (
