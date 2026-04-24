@@ -12,7 +12,9 @@ import {
   doc,
   updateDoc,
   deleteDoc,
-  orderBy
+  orderBy,
+  getDocFromCache,
+  getDocFromServer
 } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
@@ -20,6 +22,22 @@ import firebaseConfig from '../firebase-applet-config.json';
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+
+// Test Connection as per guidelines
+async function testConnection() {
+  try {
+    // Try to get a non-existent doc from server to verify connection
+    await getDocFromServer(doc(db, '_connection_test_', 'ping'));
+    console.log("Firestore connection verified.");
+  } catch (error: any) {
+    if (error?.message?.includes('offline')) {
+      console.error("Firestore appears to be offline. Check configuration.");
+    } else {
+      console.warn("Firestore connection test finished (likely doc not found, which is fine):", error.message);
+    }
+  }
+}
+testConnection();
 
 // Helper for Firestore error handling as per guidelines
 export enum OperationType {
@@ -109,70 +127,73 @@ function invalidateCache(path: string) {
 }
 // --------------------------------------------------
 
-// Function to fetch media by query key
-export async function getMediaByQuery(searchQuery: string) {
+// Function to fetch media by query key (Hybrid: Semantic + Keyword)
+export async function getMediaByQuery(searchQuery: string, queryVector?: number[]) {
   const path = 'media';
   try {
+    const allDocs = await getCachedDocs(path);
     const normalizedQuery = normalizeArabic(searchQuery);
     const searchTerms = normalizedQuery.split(/\s+/).filter(t => t.length > 1);
-    
-    if (searchTerms.length === 0) return null;
 
-    // Use cached docs for speed
-    const allDocs = await getCachedDocs(path);
-    
-    // Server-side filter hint: if any term is completely missing from keywords, it might be a weak match
-    // For now we still score all to ensure "fuzzy" works well, but we use the memory cache.
-    const scoredMatches = allDocs.map(doc => {
-      let score = 0;
+    const scoredResults = allDocs.map(doc => {
+      let keywordScore = 0;
+      let semanticScore = 0;
+
+      // 1. Calculate Keyword Score
       const normalizedQueryKey = normalizeArabic(doc.queryKey || "");
       const normalizedTitle = normalizeArabic(doc.title || "");
-      const normalizedDesc = normalizeArabic(doc.description || "");
       
-      // Bonus for exact match or substring match of the whole query
-      if (normalizedQueryKey === normalizedQuery) score += 200;
-      else if (normalizedQueryKey.includes(normalizedQuery)) score += 100;
+      if (normalizedQueryKey === normalizedQuery) keywordScore += 500;
+      else if (normalizedQueryKey.includes(normalizedQuery)) keywordScore += 200;
       
-      if (normalizedTitle === normalizedQuery) score += 150;
-      else if (normalizedTitle.includes(normalizedQuery)) score += 80;
-      
-      // Individual term matching
-      let termsMatched = 0;
       searchTerms.forEach(term => {
-        let termFound = false;
-        if (normalizedQueryKey.includes(term)) {
-          score += 40;
-          termFound = true;
-        }
-        if (normalizedTitle.includes(term)) {
-          score += 30;
-          termFound = true;
-        }
-        if (normalizedDesc.includes(term)) {
-          score += 10;
-          termFound = true;
-        }
-        if (termFound) termsMatched++;
+        if (normalizedQueryKey.includes(term)) keywordScore += 50;
+        if (normalizedTitle.includes(term)) keywordScore += 30;
       });
 
-      // Bonus for matching multiple terms
-      if (termsMatched > 1) {
-        score += (termsMatched / searchTerms.length) * 50;
+      // 2. Calculate Semantic Score (if vector provided)
+      if (queryVector && doc.embedding && Array.isArray(doc.embedding)) {
+        semanticScore = cosineSimilarity(queryVector, doc.embedding);
       }
-      
-      return { doc, score };
-    }).filter(m => m.score >= 30); // Higher score required but easier to reach with normalization and term weights
 
-    if (scoredMatches.length > 0) {
-      scoredMatches.sort((a, b) => b.score - a.score);
-      return scoredMatches.slice(0, 1).map(m => m.doc); // Return top 1 most relevant
-    }
+      // Hybrid combination: Normalize semantic score to a weight comparable to keywords
+      // A high semantic score (0.8+) should be very strong, but perfect keyword match (500+) wins.
+      const finalScore = keywordScore + (semanticScore * 300);
+
+      return { doc, finalScore, keywordScore, semanticScore };
+    });
+
+    // Filter results: must have a decent keyword match OR a good semantic match
+    const filteredResults = scoredResults.filter(res => 
+      res.finalScore >= 50 || res.semanticScore > 0.5
+    );
+
+    if (filteredResults.length === 0) return null;
+
+    filteredResults.sort((a, b) => b.finalScore - a.finalScore);
     
-    return null;
+    // Return the top result(s)
+    return filteredResults.slice(0, 1).map(r => r.doc);
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, path);
     return null;
   }
+}
+
+// Helper for semantic search (Cosine Similarity)
+export function cosineSimilarity(vecA: number[], vecB: number[]): number {
+  if (!vecA || !vecB || vecA.length !== vecB.length) return 0;
+  let dotProduct = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < vecA.length; i++) {
+    dotProduct += vecA[i] * vecB[i];
+    normA += vecA[i] * vecA[i];
+    normB += vecB[i] * vecB[i];
+  }
+  const denominator = Math.sqrt(normA) * Math.sqrt(normB);
+  if (denominator === 0) return 0;
+  return dotProduct / denominator;
 }
 
 // Keyword generator for faster search
@@ -249,6 +270,75 @@ export async function deleteCollegeInfoByCategory(category: string) {
   }
 }
 
+/**
+ * Migration Function: Backfills missing embeddings for existing documents.
+ * @param generateEmbedding Callback to generate vector using Gemini API
+ * @param onProgress Callback for UI feedback
+ */
+export async function migrateDataToEmbeddings(
+  generateEmbedding: (text: string) => Promise<number[] | null>,
+  onProgress: (status: string) => void,
+  force: boolean = false
+) {
+  const collectionsToMigrate = ['college_info', 'media'];
+  let totalMigrated = 0;
+
+  for (const colName of collectionsToMigrate) {
+    onProgress(`جاري جلب البيانات من ${colName}...`);
+    try {
+      const q = query(collection(db, colName));
+      const snapshot = await getDocs(q);
+      const docs = snapshot.docs;
+      onProgress(`تم العثور على ${docs.length} مستند في ${colName}. بدء الفحص...`);
+      
+      let count = 0;
+      let skipped = 0;
+      for (const d of docs) {
+        const data = d.data();
+        console.log(`Checking doc ${d.id} in ${colName}. Embedding exists:`, !!data.embedding);
+        
+        // Skip if embedding already exists and not in force mode
+        if (!force && data.embedding && Array.isArray(data.embedding) && data.embedding.length > 0) {
+          skipped++;
+          continue;
+        }
+
+        // Extract text based on collection type
+        let textToEmbed = "";
+        if (colName === 'college_info') {
+          textToEmbed = `${data.category || ""}: ${data.content || ""}`;
+        } else if (colName === 'media') {
+          textToEmbed = `${data.queryKey || ""} ${data.title || ""} ${data.description || ""}`;
+        }
+
+        if (textToEmbed.trim()) {
+          onProgress(`توليد embedding للمستند: ${d.id} (${colName})...`);
+          const embedding = await generateEmbedding(textToEmbed);
+          
+          if (embedding) {
+            await updateDoc(doc(db, colName, d.id), { embedding });
+            count++;
+            totalMigrated++;
+            
+            // Artificial delay to prevent rate limiting (Gemini API 429s)
+            await new Promise(r => setTimeout(r, 500)); 
+          }
+        } else {
+          skipped++;
+        }
+      }
+      onProgress(`تم تحديث ${count} مستند في ${colName}. (تم تخطي ${skipped} مستندات موجودة بالفعل أو فارغة)`);
+    } catch (error) {
+      console.error(`Migration error in ${colName}:`, error);
+      onProgress(`خطأ في ${colName}: تم تخطي الكوليكشن.`);
+    }
+  }
+
+  invalidateCache('college_info');
+  invalidateCache('media');
+  onProgress(`اكتملت الهجرة بنجاح! إجمالي المستندات المحدثة: ${totalMigrated}`);
+}
+
 // Function to fetch college info by category
 export async function getCollegeInfoByCategory(category: string) {
   const path = 'college_info';
@@ -274,61 +364,66 @@ export async function getCollegeInfoByCategory(category: string) {
   }
 }
 
-// Function to fetch college info by query
-export async function getCollegeInfoByQuery(searchQuery: string) {
+// Function to fetch college info by query (Hybrid: Semantic + Keyword)
+export async function getCollegeInfoByQuery(searchQuery: string, queryVector?: number[]) {
   const path = 'college_info';
   try {
+    const allDocs = await getCachedDocs(path);
     const normalizedQuery = normalizeArabic(searchQuery);
     const searchTerms = normalizedQuery.split(/\s+/).filter(t => t.length > 1);
-    
-    if (searchTerms.length === 0) return [];
 
-    // Use cached docs for speed
-    const allDocs = await getCachedDocs(path);
-    
-    // Score matches
-    const categoryScores: Record<string, number> = {};
+    const categoryScores: Record<string, { totalScore: number, maxSemantic: number, maxKeyword: number, docCount: number }> = {};
     
     allDocs.forEach(doc => {
-      let score = 0;
+      let docKeywordScore = 0;
+      let docSemanticScore = 0;
+
       const normalizedCat = normalizeArabic(doc.category || "");
       const normalizedCont = normalizeArabic(doc.content || "");
-      const normalizedQuery = normalizeArabic(searchQuery);
       
-      if (normalizedCat === normalizedQuery) score += 200;
-      else if (normalizedCat.includes(normalizedQuery)) score += 100;
-      else if (normalizedQuery.includes(normalizedCat)) score += 80;
+      // Keyword matching
+      if (normalizedCat === normalizedQuery) docKeywordScore += 500;
+      else if (normalizedCat.includes(normalizedQuery)) docKeywordScore += 200;
       
       let termsMatched = 0;
       searchTerms.forEach(term => {
-        let foundForTerm = false;
+        let found = false;
         if (normalizedCat.includes(term)) {
-          score += 50;
-          foundForTerm = true;
+          docKeywordScore += 60;
+          found = true;
         }
         if (normalizedCont.includes(term)) {
-          score += 15;
-          foundForTerm = true;
+          docKeywordScore += 20;
+          found = true;
         }
-        if (foundForTerm) termsMatched++;
+        if (found) termsMatched++;
       });
 
-      if (termsMatched > 1) {
-        score += (termsMatched / searchTerms.length) * 50;
+      // Semantic matching
+      if (queryVector && doc.embedding && Array.isArray(doc.embedding)) {
+        docSemanticScore = cosineSimilarity(queryVector, doc.embedding);
       }
-      
-      if (score > 0) {
-        categoryScores[doc.category] = Math.max(categoryScores[doc.category] || 0, score);
+
+      const finalDocScore = docKeywordScore + (docSemanticScore * 400);
+
+      if (finalDocScore > 50 || docSemanticScore > 0.5) {
+        const cat = doc.category;
+        if (!categoryScores[cat]) {
+          categoryScores[cat] = { totalScore: 0, maxSemantic: 0, maxKeyword: 0, docCount: 0 };
+        }
+        categoryScores[cat].totalScore = Math.max(categoryScores[cat].totalScore, finalDocScore);
+        categoryScores[cat].maxSemantic = Math.max(categoryScores[cat].maxSemantic, docSemanticScore);
+        categoryScores[cat].maxKeyword = Math.max(categoryScores[cat].maxKeyword, docKeywordScore);
+        categoryScores[cat].docCount++;
       }
     });
 
     const sortedCategories = Object.entries(categoryScores)
-      .sort(([, a], [, b]) => b - a)
-      .filter(([, score]) => score >= 30) // Threshold for relevance
-      .slice(0, 3); // Top 3 matching categories
+      .sort(([, a], [, b]) => b.totalScore - a.totalScore)
+      .slice(0, 3);
 
     if (sortedCategories.length > 0) {
-      const results = sortedCategories.map(([category]) => {
+      return sortedCategories.map(([category]) => {
         const categoryDocs = allDocs.filter(d => d.category === category);
         categoryDocs.sort((a, b) => (a.chunkIndex || 0) - (b.chunkIndex || 0));
         return {
@@ -336,9 +431,8 @@ export async function getCollegeInfoByQuery(searchQuery: string) {
           content: categoryDocs.map(d => d.content).join('\n')
         };
       });
-
-      return results;
     }
+    
     return null;
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, path);

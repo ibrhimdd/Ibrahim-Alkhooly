@@ -48,7 +48,8 @@ import {
   getCachedQuestion,
   addCachedQuestion,
   getAllCachedQuestions,
-  deleteCachedQuestion
+  deleteCachedQuestion,
+  migrateDataToEmbeddings
 } from './firebase';
 import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import * as pdfjsLib from 'pdfjs-dist';
@@ -76,95 +77,117 @@ declare global {
 const HARDCODED_API_KEY = ""; 
 
 const LOGO_URL = "https://i.top4top.io/p_3757qb3cg0.png"; // سيقوم المستخدم باستبدال هذا برابط الصورة المرفوعة
-import { motion } from 'framer-motion';
-import { motion } from 'framer-motion';
 
 const SplashScreen = ({ onComplete }: { onComplete: () => void }) => {
-  // تقسيم النص إلى كلمات لضمان ترابط الحروف العربية
-  const words = ["النوعية", "التربية", "كلية"];
+  // الكلمات مرتبة لتظهر متسلسلة بدقة
+  const words = ["كلية", "التربية", "النوعية"];
 
+  // 1. حاوية النص - لإدارة الظهور المتسلسل
+  const textContainerVariants = {
+    initial: {},
+    animate: {
+      transition: { staggerChildren: 0.15, delayChildren: 1.2 } // تسلسل سريع ومضغوط
+    }
+  };
+
+  // 2. الكلمات الفردية - حركة ناعمة من الأسفل
   const wordVariants = {
-    initial: { y: 20, opacity: 0, filter: "blur(10px)" },
-    animate: { 
-      y: 0, 
-      opacity: 1, 
-      filter: "blur(0px)",
-      transition: { duration: 1, ease: "easeOut" } 
+    initial: { y: 25, opacity: 0 },
+    animate: {
+      y: 0,
+      opacity: 1,
+      transition: { duration: 0.8, ease: [0.22, 1, 0.36, 1] } // انتقالات سلسة
+    }
+  };
+
+  // 3. حركة الخلفية المضيئة - تعميق المجال البصري
+  const backgroundVariants = {
+    initial: { opacity: 0, scale: 1 },
+    animate: {
+      opacity: [0.1, 0.25, 0.1],
+      scale: [1, 1.05, 1],
+      transition: { duration: 12, repeat: Infinity, ease: "easeInOut" }
     }
   };
 
   return (
-    <motion.div
-      initial={{ opacity: 1 }}
-      animate={{ opacity: 0 }}
-      transition={{ duration: 2, delay: 5, ease: "easeInOut" }}
-      onAnimationComplete={onComplete}
-      className="fixed inset-0 z-[200] bg-[#0c0603] flex flex-col items-center justify-center overflow-hidden"
-      dir="rtl" // التأكد من اتجاه النص من اليمين لليسان
-    >
-      {/* الخلفية المضيئة */}
-      <div className="absolute inset-0 overflow-hidden">
-        <motion.div 
-          animate={{ scale: [1, 1.1, 1], opacity: [0.1, 0.3, 0.1] }}
-          transition={{ duration: 10, repeat: Infinity }}
-          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full bg-orange-900/20 blur-[120px] rounded-full" 
-        />
-      </div>
-
-      {/* الشعار */}
+    <AnimatePresence>
       <motion.div
-        initial={{ scale: 0.8, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        transition={{ duration: 1.5, ease: "easeOut" }}
-        className="relative mb-12"
+        key="splash"
+        initial={{ opacity: 1, filter: "blur(0px)" }}
+        animate={{ opacity: 0, filter: "blur(50px)" }}
+        transition={{ duration: 1.8, delay: 6, ease: [0.77, 0, 0.175, 1] }} // خروج سينمائي
+        onAnimationComplete={onComplete}
+        className="fixed inset-0 z-[200] bg-[#0c0603] flex flex-col items-center justify-center overflow-hidden"
+        dir="rtl"
       >
-        <div className="absolute inset-0 bg-orange-600/20 blur-[60px] rounded-full scale-150 animate-pulse" />
-        <div className="relative z-10 p-6 rounded-[2.5rem] bg-white/[0.03] backdrop-blur-xl border border-white/10 shadow-2xl">
-          <img 
-            src={LOGO_URL} 
-            alt="Logo" 
-            className="w-44 h-44 md:w-56 md:h-56 object-contain drop-shadow-[0_0_20px_rgba(249,115,22,0.4)]"
+        {/* أ) الخلفية المضيئة المحسنة - لعمق بصري */}
+        <div className="absolute inset-0 overflow-hidden">
+          <motion.div
+            variants={backgroundVariants}
+            initial="initial"
+            animate="animate"
+            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full bg-orange-900/20 blur-[150px] rounded-full"
+          />
+        </div>
+
+        {/* ب) الشعار الرقمي المحسن */}
+        <motion.div
+          initial={{ scale: 0.7, opacity: 0, filter: "blur(10px)" }}
+          animate={{ scale: 1, opacity: 1, filter: "blur(0px)" }}
+          transition={{ duration: 1.6, delay: 0.5, ease: [0.22, 1, 0.36, 1] }} // ظهور "مُركز"
+          className="relative mb-14 p-10 rounded-[3rem] bg-white/[0.03] backdrop-blur-3xl border border-white/5 shadow-2xl"
+        >
+          {/* هالة داخلية دقيقة */}
+          <div className="absolute inset-0 bg-orange-600/10 blur-[50px] rounded-full scale-125 animate-pulse" />
+          
+          <img
+            src={LOGO_URL}
+            alt="Logo"
+            className="relative z-10 w-48 h-48 md:w-60 md:h-60 object-contain drop-shadow-[0_0_15px_rgba(249,115,22,0.3)]"
+          />
+        </motion.div>
+
+        {/* ج) النصوص - ظهور "بوابة المعرفة" الرقمي */}
+        <div className="text-center z-10 w-full px-6">
+          <motion.div
+            className="flex flex-row justify-center items-end gap-3 md:gap-4 mb-4"
+            variants={textContainerVariants}
+            initial="initial"
+            animate="animate"
+          >
+            {words.map((word, index) => (
+              <motion.span
+                key={index}
+                variants={wordVariants}
+                className={`font-black text-white drop-shadow-sm ${word === "النوعية" ? "text-5xl md:text-7xl" : "text-4xl md:text-6xl"}`}
+              >
+                {word}
+              </motion.span>
+            ))}
+          </motion.div>
+
+          <motion.p
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 2.8, duration: 1.2, ease: "easeOut" }}
+            className="text-orange-500 font-bold uppercase tracking-[0.35em] text-sm md:text-base border-t border-orange-500/30 pt-4"
+          >
+            جامعة كفر الشيخ
+          </motion.p>
+        </div>
+
+        {/* د) خط التحميل الرقمي السفلي - لعمق بصري */}
+        <div className="absolute bottom-0 left-0 right-0 h-[4px] bg-orange-950/20 w-full overflow-hidden">
+          <motion.div
+            className="absolute right-0 top-0 bottom-0 h-full bg-gradient-to-r from-orange-600 to-orange-400 rounded-l-full shadow-[0_0_10px_rgba(249,115,22,0.6)]"
+            initial={{ width: 0 }}
+            animate={{ width: "100%" }}
+            transition={{ duration: 7, ease: "easeInOut" }}
           />
         </div>
       </motion.div>
-
-      {/* النصوص - ظهور كلمة بكلمة لضمان الترابط */}
-      <div className="text-center z-10">
-        <motion.div 
-          className="flex flex-row-reverse justify-center gap-3 mb-4" // flex-row-reverse لترتيب الكلمات العربية صح
-          initial="initial"
-          animate="animate"
-          transition={{ staggerChildren: 0.3, delayChildren: 1 }}
-        >
-          {words.map((word, index) => (
-            <motion.span
-              key={index}
-              variants={wordVariants}
-              className="text-4xl md:text-6xl font-black text-white drop-shadow-sm"
-            >
-              {word}
-            </motion.span>
-          ))}
-        </motion.div>
-
-        <motion.p
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 2.5, duration: 1.5 }}
-          className="text-orange-500 font-bold uppercase tracking-[0.3em] text-sm md:text-base border-t border-orange-500/30 pt-4"
-        >
-          جامعة كفر الشيخ
-        </motion.p>
-      </div>
-
-      {/* خط التحميل السفلي */}
-      <motion.div 
-        className="absolute bottom-0 right-0 h-[3px] bg-gradient-to-l from-orange-600 via-orange-400 to-transparent"
-        initial={{ width: 0 }}
-        animate={{ width: "100%" }}
-        transition={{ duration: 6, ease: "easeInOut" }}
-      />
-    </motion.div>
+    </AnimatePresence>
   );
 };
 
@@ -217,6 +240,39 @@ export default function App() {
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [passwordInput, setPasswordInput] = useState('');
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
+  
+  // Helper for generating embeddings (RAG)
+  const generateEmbedding = async (text: string) => {
+    try {
+      const apiKey = userApiKey || HARDCODED_API_KEY || (process.env as any).GEMINI_API_KEY;
+      if (!apiKey) {
+        console.warn("generateEmbedding: API Key is missing");
+        return null;
+      }
+      
+      const ai = new GoogleGenAI({ apiKey });
+      const result = await ai.models.embedContent({
+        model: "gemini-embedding-2-preview",
+        contents: [text]
+      });
+      
+      const embeddings = result.embeddings as any;
+      if (embeddings && Array.isArray(embeddings) && embeddings[0]?.values) {
+        return embeddings[0].values;
+      }
+      
+      const singleEmbedding = (result as any).embedding;
+      if (singleEmbedding && singleEmbedding.values) {
+        return singleEmbedding.values;
+      }
+      
+      return null;
+    } catch (error) {
+      console.error("Embedding generation error:", error);
+      return null;
+    }
+  };
+
   const [adminTab, setAdminTab] = useState<'media' | 'info' | 'files' | 'stats'>('media');
   const [refreshKey, setRefreshKey] = useState(0);
   const [user, setUser] = useState<any>(null);
@@ -226,6 +282,10 @@ export default function App() {
   const [editingInfo, setEditingInfo] = useState<any>(null);
   
   const [isSearching, setIsSearching] = useState(false);
+  const [isMigrating, setIsMigrating] = useState(false);
+  const [migrationStatus, setMigrationStatus] = useState('');
+  const [showConfirmMigration, setShowConfirmMigration] = useState(false);
+  const [forceMigration, setForceMigration] = useState(false);
   const [hasApiKey, setHasApiKey] = useState<boolean | null>(true);
   const [userApiKey, setUserApiKey] = useState<string>(localStorage.getItem('gemini_user_api_key') || '');
   const [showKeyModal, setShowKeyModal] = useState(false);
@@ -393,15 +453,11 @@ export default function App() {
       const sessionPromise = ai.live.connect({
         model: MODEL_NAME,
         config: {
-          generationConfig: {
-            responseModalities: [Modality.AUDIO],
-            speechConfig: {
-              voiceConfig: { prebuiltVoiceConfig: { voiceName: "Zephyr" } },
-            },
+          responseModalities: [Modality.AUDIO],
+          speechConfig: {
+            voiceConfig: { prebuiltVoiceConfig: { voiceName: "Zephyr" } },
           },
-          systemInstruction: {
-            parts: [{ text: SYSTEM_INSTRUCTION }]
-          },
+          systemInstruction: SYSTEM_INSTRUCTION,
           tools: [
             { functionDeclarations: [
               GET_MEDIA_CONTENT_TOOL as any, 
@@ -409,10 +465,8 @@ export default function App() {
               GET_CACHED_ANSWER_TOOL as any,
               SAVE_QUESTION_ANSWER_TOOL as any
             ] }
-          ],
-          inputAudioTranscription: {},
-          outputAudioTranscription: {}
-        } as any,
+          ]
+        },
         callbacks: {
           onopen: () => {
             console.log("Live API connection opened.");
@@ -520,11 +574,12 @@ export default function App() {
             }
           },
           onerror: (error: any) => {
-            console.error("Live API Error:", error);
+            console.error("Live API Error Object:", error);
+            const errorMsg = error?.message || (typeof error === 'string' ? error : JSON.stringify(error));
+            console.error("Live API Error Message:", errorMsg);
             setStatus('error');
             
             // Log specific error codes for debugging
-            const errorMsg = error?.message || "";
             if (errorMsg.includes('409') || errorMsg.includes('Conflict')) {
               console.error("CRITICAL: 409 Conflict detected. Multiple concurrent connections for the same API key.");
               setErrorMessage("خطأ في الاتصال (Conflict): يبدو أن هناك جلسة أخرى مفتوحة بنفس المفتاح. يرجى الانتظار دقيقة أو التأكد من إغلاق جميع التبويبات الأخرى.");
@@ -636,8 +691,12 @@ export default function App() {
     try {
       if (name === "get_media_content") {
         const queryStr = args.query;
-        const data = await getMediaByQuery(queryStr);
-        resultMsg = "لم يتم العثور على وسائط لهذه الفئة.";
+        console.log(`Searching Media for: ${queryStr}`);
+        const queryVector = await generateEmbedding(queryStr);
+        const data = await getMediaByQuery(queryStr, queryVector);
+        console.log(`Media Search results:`, data);
+        
+        resultMsg = `لم يتم العثور على وسائط متعلقة بـ "${queryStr}".`;
         if (data && Array.isArray(data)) {
           const newMediaItems = data.map(item => ({
             type: item.type as 'image' | 'video',
@@ -655,8 +714,12 @@ export default function App() {
         }
       } else if (name === "get_college_info") {
         const queryText = args.query || args.category;
-        const data = await getCollegeInfoByQuery(queryText);
-        resultMsg = "لم يتم العثور على معلومات نصية لهذه الفئة.";
+        console.log(`Searching College Info for: ${queryText}`);
+        const queryVector = await generateEmbedding(queryText);
+        const data = await getCollegeInfoByQuery(queryText, queryVector);
+        console.log(`College Info Search results:`, data);
+        
+        resultMsg = `لم يتم العثور على معلومات نصية متعلقة بـ "${queryText}".`;
         if (data && Array.isArray(data)) {
           resultMsg = data.map(item => `الفئة: ${item.category}\nالمحتوى: ${item.content}`).join('\n\n');
         }
@@ -762,8 +825,8 @@ export default function App() {
 
         // Loop for function calling (max 5 iterations)
         for (let i = 0; i < 5; i++) {
-          const response: any = await generateWithRetry({
-            model: "gemini-3-flash-preview",
+          const result: any = await generateWithRetry({
+            model: "gemini-3-flash-preview", // Using a stable model for tool calling in static chat
             contents: messages,
             config: {
               systemInstruction: SYSTEM_INSTRUCTION,
@@ -775,28 +838,29 @@ export default function App() {
                   GET_CACHED_ANSWER_TOOL as any,
                   SAVE_QUESTION_ANSWER_TOOL as any
                 ] }
-              ]
+              ],
+              toolConfig: { includeServerSideToolInvocations: true }
             }
           });
 
-          const toolCalls = response.functionCalls;
+          const toolCalls = result.functionCalls;
           if (toolCalls && toolCalls.length > 0) {
             setIsSearching(true);
             const toolResponses = [];
             
             // Add model's complete response to history to preserve thought signatures
-            const modelContent = response.candidates?.[0]?.content;
+            const modelContent = result.candidates?.[0]?.content;
             if (modelContent) {
               messages.push(modelContent);
             }
 
             for (const call of toolCalls) {
-              const result = await handleTool(call.name, call.args);
+              const resText = await handleTool(call.name, call.args);
               toolResponses.push({
                 functionResponse: {
                   name: call.name,
                   id: call.id,
-                  response: { result }
+                  response: { result: resText }
                 }
               });
             }
@@ -805,12 +869,12 @@ export default function App() {
             messages.push({ role: 'user', parts: toolResponses });
             setIsSearching(false);
           } else {
-            // Robust text extraction
-            finalResponse = response.text || "";
+            // Robust text extraction using the response.text property as per SDK documentation
+            finalResponse = result.text || "";
             
             // Fallback if .text is empty but parts exist
-            if (!finalResponse && response.candidates?.[0]?.content?.parts) {
-              finalResponse = response.candidates[0].content.parts
+            if (!finalResponse && result.candidates?.[0]?.content?.parts) {
+              finalResponse = result.candidates[0].content.parts
                 .filter(p => p.text)
                 .map(p => p.text)
                 .join(" ");
@@ -1099,7 +1163,21 @@ export default function App() {
                   </motion.div>
                 )}
               </AnimatePresence>
-              <div ref={transcriptEndRef} />
+              {/* Searching Indicator */}
+            <AnimatePresence>
+              {(isSearching || isAiThinking) && (
+                <motion.div 
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 10 }}
+                  className="flex items-center gap-2 p-4 bg-orange-500/10 rounded-2xl border border-orange-500/20 my-2"
+                >
+                  <RefreshCcw size={14} className="text-orange-500 animate-spin" />
+                  <p className="text-xs text-orange-400 font-cairo">جاري البحث في قاعدة بيانات الكلية...</p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+            <div ref={transcriptEndRef} />
             </div>
           </div>
 
@@ -1325,7 +1403,7 @@ export default function App() {
                   الملفات
                 </button>
                 <button 
-                  onClick={() => setAdminTab('stats')}
+                  onClick={() => { console.log("Tab changed to stats"); setAdminTab('stats'); }}
                   className={`flex-1 py-3 text-sm font-bold rounded-xl transition-all font-cairo ${adminTab === 'stats' ? 'bg-orange-600 text-white shadow-lg shadow-orange-600/20' : 'text-white/40 hover:text-white/60'}`}
                 >
                   الإحصائيات
@@ -1373,6 +1451,7 @@ export default function App() {
                         {editingMedia ? "تعديل الوسائط" : "إضافة وسائط جديدة"}
                       </h4>
                       <MediaForm 
+                        generateEmbedding={generateEmbedding}
                         editingItem={editingMedia} 
                         onCancel={() => setEditingMedia(null)}
                         onComplete={() => {
@@ -1396,6 +1475,7 @@ export default function App() {
                         {editingInfo ? "تعديل المعلومات" : "إضافة معلومات جديدة"}
                       </h4>
                       <InfoForm 
+                        generateEmbedding={generateEmbedding}
                         editingItem={editingInfo}
                         onCancel={() => setEditingInfo(null)}
                         onComplete={() => {
@@ -1417,6 +1497,7 @@ export default function App() {
                     <section>
                       <h4 className="text-sm font-bold text-white/20 uppercase tracking-widest mb-6">معالجة الملفات الذكية (PDF/Word)</h4>
                       <FileProcessor 
+                        generateEmbedding={generateEmbedding}
                         onComplete={() => setRefreshKey(prev => prev + 1)} 
                         onError={(msg) => setErrorMessage(msg)}
                       />
@@ -1424,6 +1505,74 @@ export default function App() {
                   </div>
                 ) : (
                   <div className="space-y-12">
+                    <section className="p-8 bg-orange-600/10 border border-orange-500/20 rounded-[2.5rem] space-y-6">
+                      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                        <div>
+                          <h4 className="text-lg font-bold text-white mb-1 font-cairo text-right">تحديث قاعدة البيانات (Backfill Embeddings)</h4>
+                          <p className="text-xs text-white/60 font-cairo leading-relaxed max-w-md text-right">
+                            دي عملية لمرة واحدة عشان تحول البيانات القديمة لنظام البحث الذكي. اللوب ده حيعدي على كل الأقسام والوسائط ويولّد "متجهات المعنى" ليهم.
+                          </p>
+                          <div className="flex items-center gap-2 mt-2 justify-end">
+                            <label className="text-[10px] text-white/40 font-cairo cursor-pointer">إعادة جلب المتجهات حتى لو موجودة (Force Update)</label>
+                            <input 
+                              type="checkbox" 
+                              checked={forceMigration}
+                              onChange={(e) => setForceMigration(e.target.checked)}
+                              className="accent-orange-600"
+                            />
+                          </div>
+                        </div>
+                        <button 
+                          disabled={isMigrating}
+                          onClick={async () => {
+                            console.log("Migration button clicked, current state:", showConfirmMigration);
+                            const apiKey = userApiKey || HARDCODED_API_KEY || (process.env as any).GEMINI_API_KEY;
+                            if (!apiKey) {
+                              alert("عذراً، يجب إدخال مفتاح الـ API أولاً من الإعدادات لتشغيل هذه العملية.");
+                              return;
+                            }
+                            
+                            if (!showConfirmMigration) {
+                              setShowConfirmMigration(true);
+                              return;
+                            }
+
+                            setShowConfirmMigration(false);
+                            setIsMigrating(true);
+                            setMigrationStatus("بدء العملية...");
+                            try {
+                              console.log("Starting migration process...");
+                              await migrateDataToEmbeddings(generateEmbedding, setMigrationStatus, forceMigration);
+                              setRefreshKey(prev => prev + 1);
+                            } catch (e: any) {
+                              console.error("Migration Error:", e);
+                              setMigrationStatus(`فشلت العملية: ${e.message || String(e)}`);
+                            } finally {
+                              setIsMigrating(false);
+                            }
+                          }}
+                          className={`px-8 py-4 ${isMigrating ? 'bg-white/10 text-white/40' : showConfirmMigration ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-orange-600 hover:bg-orange-700 text-white shadow-lg shadow-orange-600/20'} font-bold rounded-2xl transition-all font-cairo flex items-center gap-3`}
+                        >
+                          {isMigrating ? <RefreshCcw size={18} className="animate-spin" /> : showConfirmMigration ? <X size={18} /> : <Sparkles size={18} />}
+                          {isMigrating ? 'جاري التحويل...' : showConfirmMigration ? 'هل أنت متأكد؟ (اضغط للتأكيد)' : 'بدء التحديث الشامل'}
+                        </button>
+                        {showConfirmMigration && (
+                          <button 
+                            onClick={() => setShowConfirmMigration(false)}
+                            className="text-[10px] text-white/40 hover:text-white underline font-cairo"
+                          >
+                            إلغاء
+                          </button>
+                        )}
+                      </div>
+                      
+                      {migrationStatus && (
+                        <div className="p-4 bg-black/40 rounded-2xl border border-white/5">
+                          <p className="text-xs font-mono text-orange-400 text-right">{migrationStatus}</p>
+                        </div>
+                      )}
+                    </section>
+
                     <section>
                       <div className="flex justify-between items-center mb-6">
                         <h4 className="text-sm font-bold text-white/20 uppercase tracking-widest">إحصائيات الأسئلة الشائعة</h4>
@@ -1708,7 +1857,7 @@ function InfoList({ refreshKey, onEdit }: { refreshKey: number, onEdit: (item: a
   );
 }
 
-function FileProcessor({ onComplete, onError }: { onComplete: () => void, onError: (msg: string) => void }) {
+function FileProcessor({ onComplete, onError, generateEmbedding }: { onComplete: () => void, onError: (msg: string) => void, generateEmbedding: (text: string) => Promise<number[] | null> }) {
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState('');
   const [files, setFiles] = useState<File[]>([]);
@@ -1790,9 +1939,12 @@ function FileProcessor({ onComplete, onError }: { onComplete: () => void, onErro
               const extractedData = JSON.parse(response.text);
               if (Array.isArray(extractedData)) {
                 for (const item of extractedData) {
-                  // Add chunk metadata to help with retrieval if needed
+                  // إنشاء الـ Embedding للبيانات المستخرجة (RAG)
+                  const embedding = await generateEmbedding(`${item.category}: ${item.content}`);
+                  
                   await addCollegeInfo({
                     ...item,
+                    embedding,
                     sourceFile: file.name,
                     processedAt: new Date().toISOString()
                   });
@@ -1886,7 +2038,7 @@ function FileProcessor({ onComplete, onError }: { onComplete: () => void, onErro
   );
 }
 
-function MediaForm({ onComplete, editingItem, onCancel }: { onComplete: () => void, editingItem?: any, onCancel?: () => void }) {
+function MediaForm({ onComplete, editingItem, onCancel, generateEmbedding }: { onComplete: () => void, editingItem?: any, onCancel?: () => void, generateEmbedding: (text: string) => Promise<number[] | null> }) {
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     queryKey: '',
@@ -1920,11 +2072,16 @@ function MediaForm({ onComplete, editingItem, onCancel }: { onComplete: () => vo
     e.preventDefault();
     setLoading(true);
     try {
+      // توليد الـ Embedding للوسائط (RAG)
+      const textToEmbed = `${formData.queryKey} ${formData.title} ${formData.description || ""}`;
+      const embedding = await generateEmbedding(textToEmbed);
+      const dataToSave = { ...formData, embedding };
+
       if (editingItem) {
-        await updateMedia(editingItem.id, formData);
+        await updateMedia(editingItem.id, dataToSave);
         alert("تم تحديث البيانات بنجاح!");
       } else {
-        await addMedia(formData);
+        await addMedia(dataToSave);
         alert("تمت إضافة الوسائط بنجاح!");
       }
       onComplete();
@@ -2004,7 +2161,7 @@ function MediaForm({ onComplete, editingItem, onCancel }: { onComplete: () => vo
   );
 }
 
-function InfoForm({ onComplete, editingItem, onCancel }: { onComplete: () => void, editingItem?: any, onCancel?: () => void }) {
+function InfoForm({ onComplete, editingItem, onCancel, generateEmbedding }: { onComplete: () => void, editingItem?: any, onCancel?: () => void, generateEmbedding: (text: string) => Promise<number[] | null> }) {
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     category: '',
@@ -2029,11 +2186,15 @@ function InfoForm({ onComplete, editingItem, onCancel }: { onComplete: () => voi
     e.preventDefault();
     setLoading(true);
     try {
+      // توليد الـ Embedding عند إضافة أو تحديث معلومة يدوياً
+      const embedding = await generateEmbedding(`${formData.category}: ${formData.content}`);
+      const dataToSave = { ...formData, embedding };
+
       if (editingItem) {
-        await updateCollegeInfo(editingItem.id, formData);
+        await updateCollegeInfo(editingItem.id, dataToSave);
         alert("تم تحديث المعلومات بنجاح!");
       } else {
-        await addCollegeInfo(formData);
+        await addCollegeInfo(dataToSave);
         alert("تمت إضافة المعلومات بنجاح!");
       }
       onComplete();

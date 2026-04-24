@@ -26,6 +26,11 @@
         "description": {
           "type": "string",
           "description": "Optional detailed description."
+        },
+        "embedding": {
+          "type": "array",
+          "items": { "type": "number" },
+          "description": "The vector embedding for semantic search."
         }
       },
       "required": ["queryKey", "type", "url", "title"]
@@ -55,6 +60,11 @@
           "type": "string",
           "format": "date-time",
           "description": "When this info was last updated."
+        },
+        "embedding": {
+          "type": "array",
+          "items": { "type": "number" },
+          "description": "The vector embedding for semantic search."
         }
       },
       "required": ["category", "content"]
