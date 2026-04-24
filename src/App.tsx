@@ -27,6 +27,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { AudioHandler } from './utils/audio';
 import { 
   SYSTEM_INSTRUCTION, 
+  LIVE_MODEL_NAME,
+  TEXT_MODEL_NAME,
   MODEL_NAME, 
   GET_MEDIA_CONTENT_TOOL, 
   GET_COLLEGE_INFO_TOOL,
@@ -250,9 +252,9 @@ export default function App() {
         return null;
       }
       
-      const ai = new GoogleGenAI({ apiKey });
+      const ai = new GoogleGenAI({ apiKey, apiVersion: 'v1beta' });
       const result = await ai.models.embedContent({
-        model: "gemini-embedding-2-preview",
+        model: "gemini-embedding-2-preview", 
         contents: [text]
       });
       
@@ -447,7 +449,7 @@ export default function App() {
         return;
       }
 
-      const ai = new GoogleGenAI({ apiKey });
+      const ai = new GoogleGenAI({ apiKey, apiVersion: 'v1beta' });
       console.log("Connecting to Live API with model:", MODEL_NAME);
       
       const sessionPromise = ai.live.connect({
@@ -457,7 +459,7 @@ export default function App() {
           speechConfig: {
             voiceConfig: { prebuiltVoiceConfig: { voiceName: "Zephyr" } },
           },
-          systemInstruction: SYSTEM_INSTRUCTION,
+          systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
           tools: [
             { functionDeclarations: [
               GET_MEDIA_CONTENT_TOOL as any, 
@@ -790,7 +792,7 @@ export default function App() {
           return;
         }
 
-        const ai = new GoogleGenAI({ apiKey });
+        const ai = new GoogleGenAI({ apiKey, apiVersion: 'v1beta' });
         
         // Build history-aware context (last 10 turns)
         const historyContext: any[] = transcript
@@ -826,7 +828,7 @@ export default function App() {
         // Loop for function calling (max 5 iterations)
         for (let i = 0; i < 5; i++) {
           const result: any = await generateWithRetry({
-            model: "gemini-3-flash-preview", // Using a stable model for tool calling in static chat
+            model: TEXT_MODEL_NAME, 
             contents: messages,
             config: {
               systemInstruction: SYSTEM_INSTRUCTION,
@@ -1878,7 +1880,7 @@ function FileProcessor({ onComplete, onError, generateEmbedding }: { onComplete:
       setProcessing(false);
       return;
     }
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI({ apiKey, apiVersion: 'v1beta' });
 
     for (const file of files) {
       try {

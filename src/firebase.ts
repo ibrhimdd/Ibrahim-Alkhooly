@@ -101,8 +101,11 @@ function normalizeArabic(text: string): string {
     .replace(/[أإآ]/g, 'ا')
     .replace(/ة/g, 'ه')
     .replace(/ى/g, 'ي')
+    .replace(/[ؤ]/g, 'و')
+    .replace(/[ئ]/g, 'ي')
     .replace(/[\u064B-\u065F]/g, "") // Remove harakat (diacritics)
-    .replace(/[^\w\s\u0621-\u064A]/g, "") // Remove punctuation
+    .replace(/[^\w\s\u0621-\u064A]/g, " ") // Replace punctuation with space
+    .replace(/\s+/g, " ") // Collapse spaces
     .trim();
 }
 
@@ -163,9 +166,9 @@ export async function getMediaByQuery(searchQuery: string, queryVector?: number[
       return { doc, finalScore, keywordScore, semanticScore };
     });
 
-    // Filter results: must have a decent keyword match OR a good semantic match
+    // Filter results: must have ANY match (low threshold)
     const filteredResults = scoredResults.filter(res => 
-      res.finalScore >= 50 || res.semanticScore > 0.5
+      res.finalScore >= 10 || res.semanticScore > 0.3
     );
 
     if (filteredResults.length === 0) return null;
@@ -406,7 +409,7 @@ export async function getCollegeInfoByQuery(searchQuery: string, queryVector?: n
 
       const finalDocScore = docKeywordScore + (docSemanticScore * 400);
 
-      if (finalDocScore > 50 || docSemanticScore > 0.5) {
+      if (finalDocScore > 10 || docSemanticScore > 0.3) {
         const cat = doc.category;
         if (!categoryScores[cat]) {
           categoryScores[cat] = { totalScore: 0, maxSemantic: 0, maxKeyword: 0, docCount: 0 };
