@@ -146,30 +146,59 @@ export async function getMediaByQuery(searchQuery: string, queryVector?: number[
       const normalizedQueryKey = normalizeArabic(doc.queryKey || "");
       const normalizedTitle = normalizeArabic(doc.title || "");
       
+      // Exact matches get the highest priority
       if (normalizedQueryKey === normalizedQuery) keywordScore += 500;
-      else if (normalizedQueryKey.includes(normalizedQuery)) keywordScore += 200;
+      if (normalizedTitle === normalizedQuery) keywordScore += 500;
       
+      // Full query inclusions
+      if (normalizedQueryKey.includes(normalizedQuery) && normalizedQuery.length > 3) keywordScore += 200;
+      if (normalizedTitle.includes(normalizedQuery) && normalizedQuery.length > 3) keywordScore += 200;
+      
+      // Individual term matches
+      let termsMatched = 0;
       searchTerms.forEach(term => {
-        if (normalizedQueryKey.includes(term)) keywordScore += 50;
-        if (normalizedTitle.includes(term)) keywordScore += 30;
+        let matched = false;
+        if (normalizedQueryKey.includes(term)) {
+          keywordScore += 50;
+          matched = true;
+        }
+        if (normalizedTitle.includes(term)) {
+          keywordScore += 60; // Slightly higher priority for title terms
+          matched = true;
+        }
+        if (matched) termsMatched++;
       });
+
+      // Bonus for matching multiple terms
+      if (searchTerms.length > 1 && termsMatched > 0) {
+        keywordScore += (termsMatched / searchTerms.length) * 100;
+      }
 
       // 2. Calculate Semantic Score (if vector provided)
       if (queryVector && doc.embedding && Array.isArray(doc.embedding)) {
         semanticScore = cosineSimilarity(queryVector, doc.embedding);
       }
 
-      // Hybrid combination: Normalize semantic score to a weight comparable to keywords
-      // A high semantic score (0.8+) should be very strong, but perfect keyword match (500+) wins.
-      const finalScore = keywordScore + (semanticScore * 300);
+      // Hybrid combination
+      // Increase semantic weight slightly but keep keywords dominant
+      const finalScore = keywordScore + (semanticScore * 350);
 
-      return { doc, finalScore, keywordScore, semanticScore };
+      return { doc, finalScore, keywordScore, semanticScore, termsMatched };
     });
 
-    // Filter results: must have ANY match (low threshold)
-    const filteredResults = scoredResults.filter(res => 
-      res.finalScore >= 10 || res.semanticScore > 0.3
-    );
+    // Filter results: Be more selective to avoid "guessing"
+    // If we have a very strong keyword match, accept lower semantic score.
+    // Otherwise, we need a decent combination or a strong semantic match.
+    const filteredResults = scoredResults.filter(res => {
+      // Strong keyword match (exact or very close)
+      if (res.keywordScore >= 200) return true;
+      // Decent hybrid match
+      if (res.finalScore >= 150) return true;
+      // Strong semantic only match
+      if (res.semanticScore > 0.75) return true;
+      
+      return false;
+    });
 
     if (filteredResults.length === 0) return null;
 
@@ -384,7 +413,7 @@ export async function getCollegeInfoByQuery(searchQuery: string, queryVector?: n
       const normalizedCat = normalizeArabic(doc.category || "");
       const normalizedCont = normalizeArabic(doc.content || "");
       
-      // Keyword matching
+      // Exact category match is high priority
       if (normalizedCat === normalizedQuery) docKeywordScore += 500;
       else if (normalizedCat.includes(normalizedQuery)) docKeywordScore += 200;
       
@@ -402,14 +431,20 @@ export async function getCollegeInfoByQuery(searchQuery: string, queryVector?: n
         if (found) termsMatched++;
       });
 
+      // Bonus for matching multiple terms
+      if (searchTerms.length > 1 && termsMatched > 0) {
+        docKeywordScore += (termsMatched / searchTerms.length) * 100;
+      }
+
       // Semantic matching
       if (queryVector && doc.embedding && Array.isArray(doc.embedding)) {
         docSemanticScore = cosineSimilarity(queryVector, doc.embedding);
       }
 
-      const finalDocScore = docKeywordScore + (docSemanticScore * 400);
+      const finalDocScore = docKeywordScore + (docSemanticScore * 450);
 
-      if (finalDocScore > 10 || docSemanticScore > 0.3) {
+      // Higher threshold to avoid weak "guesses"
+      if (docKeywordScore >= 200 || finalDocScore >= 150 || docSemanticScore > 0.75) {
         const cat = doc.category;
         if (!categoryScores[cat]) {
           categoryScores[cat] = { totalScore: 0, maxSemantic: 0, maxKeyword: 0, docCount: 0 };
