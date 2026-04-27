@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI, Modality, LiveServerMessage, Type, ThinkingLevel } from "@google/genai";
+import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
 import { 
   Mic, 
   MicOff, 
@@ -252,20 +253,15 @@ export default function App() {
         return null;
       }
       
-      const ai = new GoogleGenAI({ apiKey, apiVersion: 'v1beta' });
-      const result = await ai.models.embedContent({
-        model: "gemini-embedding-2-preview", 
-        contents: [text]
-      });
+      const genAI = new GoogleGenerativeAI(apiKey);
+      const model = genAI.getGenerativeModel(
+        { model: "text-embedding-004" },
+        { apiVersion: "v1beta" }
+      );
+      const result = await model.embedContent(text);
       
-      const embeddings = result.embeddings as any;
-      if (embeddings && Array.isArray(embeddings) && embeddings[0]?.values) {
-        return embeddings[0].values;
-      }
-      
-      const singleEmbedding = (result as any).embedding;
-      if (singleEmbedding && singleEmbedding.values) {
-        return singleEmbedding.values;
+      if (result.embedding && result.embedding.values) {
+        return result.embedding.values;
       }
       
       return null;
@@ -792,12 +788,16 @@ export default function App() {
           return;
         }
 
-        const ai = new GoogleGenAI({ apiKey, apiVersion: 'v1beta' });
+        const genAI = new GoogleGenerativeAI(apiKey);
+        const model = genAI.getGenerativeModel(
+          { model: TEXT_MODEL_NAME },
+          { apiVersion: "v1beta" }
+        );
         
         // Build history-aware context (last 10 turns)
         const historyContext: any[] = transcript
           .slice(-10)
-          .filter(t => t.text) // Ensure only entries with text are sent as history
+          .filter(t => t.text) 
           .map(t => ({
             role: t.role,
             parts: [{ text: t.text }]
@@ -806,16 +806,26 @@ export default function App() {
         let messages: any[] = [...historyContext, { role: 'user', parts: [{ text: textToSend }] }];
         let finalResponse = "";
 
-        // Retry wrapper for generateContent to handle 429s (Quota)
-        const generateWithRetry = async (payload: any, maxRetries = 2) => {
+        const generateWithRetry = async (currentMessages: any[], maxRetries = 2) => {
           for (let attempt = 0; attempt <= maxRetries; attempt++) {
             try {
-              return await ai.models.generateContent(payload);
+              return await model.generateContent({
+                contents: currentMessages,
+                tools: [
+                  { functionDeclarations: [
+                    GET_MEDIA_CONTENT_TOOL as any, 
+                    GET_COLLEGE_INFO_TOOL as any,
+                    GET_CACHED_ANSWER_TOOL as any,
+                    SAVE_QUESTION_ANSWER_TOOL as any
+                  ] }
+                ] as any,
+                systemInstruction: SYSTEM_INSTRUCTION
+              });
             } catch (error: any) {
               const msg = error?.message || "";
               const isQuota = msg.includes("429") || msg.includes("quota") || msg.includes("RESOURCE_EXHAUSTED");
               if (isQuota && attempt < maxRetries) {
-                const delay = Math.pow(2, attempt) * 2000; // 2s, 4s
+                const delay = Math.pow(2, attempt) * 2000;
                 console.warn(`Quota exhausted. Retrying in ${delay}ms...`);
                 await new Promise(r => setTimeout(r, delay));
                 continue;
@@ -825,27 +835,10 @@ export default function App() {
           }
         };
 
-        // Loop for function calling (max 5 iterations)
         for (let i = 0; i < 5; i++) {
-          const result: any = await generateWithRetry({
-            model: TEXT_MODEL_NAME, 
-            contents: messages,
-            config: {
-              systemInstruction: SYSTEM_INSTRUCTION,
-              thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
-              tools: [
-                { functionDeclarations: [
-                  GET_MEDIA_CONTENT_TOOL as any, 
-                  GET_COLLEGE_INFO_TOOL as any,
-                  GET_CACHED_ANSWER_TOOL as any,
-                  SAVE_QUESTION_ANSWER_TOOL as any
-                ] }
-              ],
-              toolConfig: { includeServerSideToolInvocations: true }
-            }
-          });
-
-          const toolCalls = result.functionCalls;
+          const result: any = await generateWithRetry(messages);
+          const response = result.response;
+          const toolCalls = response.functionCalls();
           if (toolCalls && toolCalls.length > 0) {
             setIsSearching(true);
             const toolResponses = [];
@@ -861,20 +854,23 @@ export default function App() {
               toolResponses.push({
                 functionResponse: {
                   name: call.name,
-                  id: call.id,
                   response: { result: resText }
                 }
               });
             }
             
             // Add our responses to history
-            messages.push({ role: 'user', parts: toolResponses });
+            messages.push({ role: 'function', parts: toolResponses });
             setIsSearching(false);
           } else {
-            // Robust text extraction using the response.text property as per SDK documentation
-            finalResponse = result.text || "";
+            // Robust text extraction using the response.text() method as per standard SDK
+            try {
+              finalResponse = response.text() || "";
+            } catch (e) {
+              finalResponse = "";
+            }
             
-            // Fallback if .text is empty but parts exist
+            // Fallback if .text() is empty or fails but parts exist
             if (!finalResponse && result.candidates?.[0]?.content?.parts) {
               finalResponse = result.candidates[0].content.parts
                 .filter(p => p.text)
@@ -1880,7 +1876,11 @@ function FileProcessor({ onComplete, onError, generateEmbedding }: { onComplete:
       setProcessing(false);
       return;
     }
-    const ai = new GoogleGenAI({ apiKey, apiVersion: 'v1beta' });
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel(
+      { model: "gemini-1.5-flash" },
+      { apiVersion: "v1beta" }
+    );
 
     for (const file of files) {
       try {
@@ -1911,26 +1911,25 @@ function FileProcessor({ onComplete, onError, generateEmbedding }: { onComplete:
             setProgress(`جاري معالجة الجزء ${i + 1} من ${chunks.length} لملف ${file.name}...`);
             
             try {
-              const response = await ai.models.generateContent({
-                model: "gemini-3-flash-preview",
-                contents: `قم باستخراج كافة المعلومات الهامة من هذا النص وحولها إلى بيانات منظمة لقاعدة بيانات الكلية. 
+              const result = await model.generateContent({
+                contents: [{ role: "user", parts: [{ text: `قم باستخراج كافة المعلومات الهامة من هذا النص وحولها إلى بيانات منظمة لقاعدة بيانات الكلية. 
                 يجب أن تكون المخرجات عبارة عن قائمة من الكائنات (JSON Array of Objects).
                 كل كائن يجب أن يحتوي على:
                 - category: فئة المعلومة (مثلاً: شؤون الطلاب، الأقسام، الدراسات العليا، المصاريف، الجداول).
                 - content: نص المعلومة المفصل والدقيق.
                 - tags: قائمة كلمات مفتاحية مرتبطة.
                 
-                النص: ${chunks[i]}`,
-                config: {
+                النص: ${chunks[i]}` }]}],
+                generationConfig: {
                   responseMimeType: "application/json",
                   responseSchema: {
-                    type: Type.ARRAY,
+                    type: SchemaType.ARRAY,
                     items: {
-                      type: Type.OBJECT,
+                      type: SchemaType.OBJECT,
                       properties: {
-                        category: { type: Type.STRING },
-                        content: { type: Type.STRING },
-                        tags: { type: Type.ARRAY, items: { type: Type.STRING } }
+                        category: { type: SchemaType.STRING },
+                        content: { type: SchemaType.STRING },
+                        tags: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING } }
                       },
                       required: ["category", "content"]
                     }
@@ -1938,7 +1937,7 @@ function FileProcessor({ onComplete, onError, generateEmbedding }: { onComplete:
                 }
               });
 
-              const extractedData = JSON.parse(response.text);
+              const extractedData = JSON.parse(result.response.text());
               if (Array.isArray(extractedData)) {
                 for (const item of extractedData) {
                   // إنشاء الـ Embedding للبيانات المستخرجة (RAG)
