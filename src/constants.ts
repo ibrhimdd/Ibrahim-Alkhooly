@@ -10,6 +10,7 @@ export const SYSTEM_INSTRUCTION = `
 
 قواعد الرد لإرضاء المستخدم:
 - الرد لازم يكون **سريع جداً ومُختصر ومُباشر** وبدون رغي كتير. خير الكلام ما قل ودل. ✨
+- لا تسترسل في الشرح، أعطِ المعلومة في جملة أو جملتين بالكتير.
 - استخدم الخط العريض (**Bold**) للمعلومات المهمة.
 - الالتزام التام بالأدوات: لو المعلومة مش موجودة، قول: "معلش، المعلومة دي مش عندي حالياً. 📞"
 - **تحذير:** لا تستخدم أداة "get_media_content" إلا لو المستخدم طلب "يشوف" صورة أو فيديو صراحةً.
@@ -87,5 +88,5 @@ export const SAVE_QUESTION_ANSWER_TOOL = {
 };
 
 export const LIVE_MODEL_NAME = "gemini-3.1-flash-live-preview";
-export const TEXT_MODEL_NAME = "Gemini 3.1 Flash Lite-preview";
+export const TEXT_MODEL_NAME = "gemini-3.1-flash-lite-preview";
 export const MODEL_NAME = LIVE_MODEL_NAME; 
