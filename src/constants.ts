@@ -87,5 +87,5 @@ export const SAVE_QUESTION_ANSWER_TOOL = {
 };
 
 export const LIVE_MODEL_NAME = "gemini-3.1-flash-live-preview";
-export const TEXT_MODEL_NAME = "Gemini 3.1 Flash Lite";
+export const TEXT_MODEL_NAME = "Gemini 3.1 Flash Lite-preview";
 export const MODEL_NAME = LIVE_MODEL_NAME; 
