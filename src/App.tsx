@@ -21,7 +21,9 @@ import {
   ExternalLink,
   Key,
   X,
-  Send
+  Send,
+  Settings2,
+  Plus
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AudioHandler } from './utils/audio';
@@ -238,6 +240,30 @@ export default function App() {
   const [searchStatus, setSearchStatus] = useState<string>("");
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isAiThinking, setIsAiThinking] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [selectedLiveModel, setSelectedLiveModel] = useState<string>(() => localStorage.getItem('live_model') || LIVE_MODEL_NAME);
+  const [selectedTextModel, setSelectedTextModel] = useState<string>(() => localStorage.getItem('text_model') || TEXT_MODEL_NAME);
+  const [customModelInput, setCustomModelInput] = useState("");
+
+  const liveModels = ["gemini-3.1-flash-live-preview", "gemini-2.5-flash-native-audio-preview-09-2025"];
+  const textModels = ["gemini-2.5-flash", "gemini-3.1-flash-lite-preview", "gemini-3-flash-preview"];
+
+  const handleUpdateModel = (type: 'live' | 'text', model: string) => {
+    if (type === 'live') {
+      setSelectedLiveModel(model);
+      localStorage.setItem('live_model', model);
+    } else {
+      setSelectedTextModel(model);
+      localStorage.setItem('text_model', model);
+    }
+  };
+
+  const addCustomModel = (type: 'live' | 'text') => {
+    if (!customModelInput.trim()) return;
+    handleUpdateModel(type, customModelInput.trim());
+    setCustomModelInput("");
+  };
+
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [currentResponse, setCurrentResponse] = useState('');
   const [showAdmin, setShowAdmin] = useState(false);
@@ -456,10 +482,11 @@ export default function App() {
       }
 
       const ai = new GoogleGenAI({ apiKey });
-      console.log("Connecting to Live API with model:", MODEL_NAME);
+      console.log("Connecting to Live API with model:", selectedLiveModel);
       
       const sessionPromise = ai.live.connect({
-        model: MODEL_NAME,
+        model: selectedLiveModel,
+
         config: {
           responseModalities: [Modality.AUDIO],
           speechConfig: {
@@ -856,7 +883,7 @@ export default function App() {
         // Tool calling loop
         for (let loop = 0; loop < 5; loop++) {
           const result = await withRetry(() => ai.models.generateContentStream({
-            model: TEXT_MODEL_NAME,
+            model: selectedTextModel,
             contents: messages,
             config: {
               systemInstruction: SYSTEM_INSTRUCTION,
@@ -981,6 +1008,131 @@ export default function App() {
         )}
       </AnimatePresence>
 
+      <AnimatePresence>
+        {isSettingsOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm font-cairo"
+            onClick={() => setIsSettingsOpen(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="bg-[#0f1115] border border-white/10 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="p-6 border-b border-white/10 flex justify-between items-center bg-white/5">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-orange-500/20 rounded-lg">
+                    <Settings2 size={20} className="text-orange-500" />
+                  </div>
+                  <h3 className="text-xl font-bold text-white">إعدادات النماذج الذكية</h3>
+                </div>
+                <button onClick={() => setIsSettingsOpen(false)} className="text-white/40 hover:text-white transition-colors">
+                  <X size={24} />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-8 max-h-[70vh] overflow-y-auto custom-scrollbar">
+                {/* Live Model Selection */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-orange-400">
+                    <Mic size={18} />
+                    <label className="text-sm font-bold uppercase tracking-wider">نموذج المحادثة الصوتية (Live API)</label>
+                  </div>
+                  <div className="grid grid-cols-1 gap-2">
+                    {liveModels.map(m => (
+                      <button
+                        key={m}
+                        onClick={() => handleUpdateModel('live', m)}
+                        className={`p-3 rounded-xl text-right text-xs transition-all border ${
+                          selectedLiveModel === m 
+                          ? 'bg-orange-500/20 border-orange-500 text-orange-400' 
+                          : 'bg-white/5 border-white/5 text-white/60 hover:border-white/20'
+                        }`}
+                      >
+                        {m}
+                      </button>
+                    ))}
+                    {/* If selected model is not in presets (custom) */}
+                    {!liveModels.includes(selectedLiveModel) && (
+                      <div className="p-3 rounded-xl text-right text-xs bg-orange-500/20 border border-orange-500 text-orange-400 flex justify-between items-center">
+                        <span className="bg-orange-500 text-white px-2 py-0.5 rounded text-[10px] font-bold">مخصص</span>
+                        {selectedLiveModel}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Text Model Selection */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-cyan-400">
+                    <MessageSquare size={18} />
+                    <label className="text-sm font-bold uppercase tracking-wider">نموذج المحادثة النصية (Chat API)</label>
+                  </div>
+                  <div className="grid grid-cols-1 gap-2">
+                    {textModels.map(m => (
+                      <button
+                        key={m}
+                        onClick={() => handleUpdateModel('text', m)}
+                        className={`p-3 rounded-xl text-right text-xs transition-all border ${
+                          selectedTextModel === m 
+                          ? 'bg-cyan-500/20 border-cyan-500 text-cyan-400' 
+                          : 'bg-white/5 border-white/5 text-white/60 hover:border-white/20'
+                        }`}
+                      >
+                        {m}
+                      </button>
+                    ))}
+                    {!textModels.includes(selectedTextModel) && (
+                      <div className="p-3 rounded-xl text-right text-xs bg-cyan-500/20 border border-cyan-500 text-cyan-400 flex justify-between items-center">
+                        <span className="bg-cyan-500 text-white px-2 py-0.5 rounded text-[10px] font-bold">مخصص</span>
+                        {selectedTextModel}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Add Custom Model */}
+                <div className="pt-4 border-t border-white/10">
+                  <p className="text-xs text-white/40 mb-3 text-right">إضافة موديل مخصص جديد:</p>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={customModelInput}
+                      onChange={e => setCustomModelInput(e.target.value)}
+                      placeholder="اسم الموديل (مثلاً gemini-2.0-flash)"
+                      className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-orange-500/50 transition-all text-left"
+                    />
+                  </div>
+                  <div className="flex gap-2 mt-2">
+                    <button
+                      onClick={() => addCustomModel('live')}
+                      className="flex-1 bg-white/5 hover:bg-orange-500/20 border border-white/10 hover:border-orange-500/50 rounded-xl p-3 text-xs text-white/70 hover:text-orange-400 transition-all flex items-center justify-center gap-2"
+                    >
+                      <Plus size={14} /> صوتي
+                    </button>
+                    <button
+                      onClick={() => addCustomModel('text')}
+                      className="flex-1 bg-white/5 hover:bg-cyan-500/20 border border-white/10 hover:border-cyan-500/50 rounded-xl p-3 text-xs text-white/70 hover:text-cyan-400 transition-all flex items-center justify-center gap-2"
+                    >
+                      <Plus size={14} /> نصي
+                    </button>
+                  </div>
+                </div>
+
+                <p className="text-[10px] text-white/30 text-center pt-4">
+                  * سيتم حفظ اختياراتك في هذا المتصفح بشكل تلقائي.
+                </p>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <ApiKeyModal 
         isOpen={showKeyModal}
         onClose={() => setShowKeyModal(false)}
@@ -1017,8 +1169,16 @@ export default function App() {
               </div>
             </div>
             <div className="flex items-center gap-2">
+              <button
+                onClick={() => setIsSettingsOpen(true)}
+                className="p-2 bg-white/5 hover:bg-white/10 rounded-xl text-white/70 hover:text-white transition-all border border-white/10"
+                title="إعدادات النماذج"
+              >
+                <Settings2 size={18} />
+              </button>
               <button 
                 onClick={() => setShowKeyModal(true)}
+
                 title="إعدادات المفتاح"
                 className="p-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all"
               >
@@ -1559,6 +1719,7 @@ export default function App() {
                         generateEmbedding={generateEmbedding}
                         onComplete={() => setRefreshKey(prev => prev + 1)} 
                         onError={(msg) => setErrorMessage(msg)}
+                        selectedTextModel={selectedTextModel}
                       />
                     </section>
                   </div>
@@ -1916,7 +2077,7 @@ function InfoList({ refreshKey, onEdit }: { refreshKey: number, onEdit: (item: a
   );
 }
 
-function FileProcessor({ onComplete, onError, generateEmbedding }: { onComplete: () => void, onError: (msg: string) => void, generateEmbedding: (text: string) => Promise<number[] | null> }) {
+function FileProcessor({ onComplete, onError, generateEmbedding, selectedTextModel }: { onComplete: () => void, onError: (msg: string) => void, generateEmbedding: (text: string) => Promise<number[] | null>, selectedTextModel: string }) {
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState('');
   const [files, setFiles] = useState<File[]>([]);
@@ -1969,7 +2130,7 @@ function FileProcessor({ onComplete, onError, generateEmbedding }: { onComplete:
             
             try {
               const result = await ai.models.generateContent({
-                model: TEXT_MODEL_NAME,
+                model: selectedTextModel,
                 contents: [{ role: "user", parts: [{ text: `قم باستخراج كافة المعلومات الهامة من هذا النص وحولها إلى بيانات منظمة لقاعدة بيانات الكلية. 
                 يجب أن تكون المخرجات عبارة عن قائمة من الكائنات (JSON Array of Objects).
                 كل كائن يجب أن يحتوي على:
