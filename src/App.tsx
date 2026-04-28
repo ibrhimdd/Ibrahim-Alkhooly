@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI, Modality, LiveServerMessage, Type, ThinkingLevel } from "@google/genai";
-import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
 import { 
   Mic, 
   MicOff, 
@@ -41,6 +40,7 @@ import {
   addMedia, 
   addCollegeInfo, 
   auth, 
+  db,
   getCollegeInfoByQuery, 
   getAllMedia, 
   getAllCollegeInfo, 
@@ -54,6 +54,7 @@ import {
   deleteCachedQuestion,
   migrateDataToEmbeddings
 } from './firebase';
+import { doc, getDocFromServer } from 'firebase/firestore';
 import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import * as pdfjsLib from 'pdfjs-dist';
 import mammoth from 'mammoth';
@@ -234,6 +235,7 @@ export default function App() {
   const [isActive, setIsActive] = useState(false);
   const [status, setStatus] = useState<'idle' | 'connecting' | 'active' | 'error'>('idle');
   const [transcript, setTranscript] = useState<{ role: 'user' | 'model', text?: string, media?: MediaItem }[]>([]);
+  const [searchStatus, setSearchStatus] = useState<string>("");
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isAiThinking, setIsAiThinking] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -253,14 +255,14 @@ export default function App() {
         return null;
       }
       
-      const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel(
-        { model: "text-embedding-004" }
-      );
-      const result = await model.embedContent(text);
+      const ai = new GoogleGenAI({ apiKey });
+      const result = await ai.models.embedContent({
+        model: "gemini-embedding-2-preview",
+        contents: [{ parts: [{ text }] }]
+      });
       
-      if (result.embedding && result.embedding.values) {
-        return result.embedding.values;
+      if (result.embeddings && result.embeddings.length > 0) {
+        return result.embeddings[0].values;
       }
       
       return null;
@@ -357,19 +359,28 @@ export default function App() {
   }, [transcript, currentResponse, isSearching, isAiThinking]);
 
   useEffect(() => {
-    // Test Firestore connection on mount
+    // Test Firestore connection on mount with a lightweight check
     const testConn = async () => {
       try {
-        const media = await getAllMedia();
-        console.log("Firestore connection test: Found", media.length, "media items.");
-        const info = await getAllCollegeInfo();
-        console.log("Firestore connection test: Found", info.length, "info items.");
-        setIsDbConnected(true);
         setErrorMessage(null);
+        // Just try to get one doc metadata or a small ping to verify connectivity
+        await getDocFromServer(doc(db, '_connection_test_', 'ping')).catch(e => {
+            // Document missing is fine, but it verifies connection to server
+            if (e.message.includes('Quota') || e.message.includes('8 RESOURCE_EXHAUSTED')) throw e;
+        });
+        
+        setIsDbConnected(true);
       } catch (error: any) {
-        console.error("Firestore connection test failed:", error);
         setIsDbConnected(false);
-        setErrorMessage(error.message || "فشل الاتصال بقاعدة البيانات");
+        const errMessage = error.message || "";
+        const isQuota = errMessage.includes('Quota') || errMessage.includes('8 RESOURCE_EXHAUSTED') || (error.message && error.message.startsWith('{') && JSON.parse(error.message).isQuotaError);
+        
+        if (isQuota) {
+          setErrorMessage("عذراً، نفذت حصة الاستخدام المجانية لليوم (Firestore Quota). سيتم استئناف الخدمة تلقائياً غداً. ⏳");
+        } else {
+          setErrorMessage("فشل الاتصال بقاعدة البيانات. تأكد من جودة الإنترنت أو إعدادات المشروع.");
+          console.error("Firestore connectivity error:", error);
+        }
       }
     };
     testConn();
@@ -444,7 +455,7 @@ export default function App() {
         return;
       }
 
-      const ai = new GoogleGenAI({ apiKey, apiVersion: 'v1beta' });
+      const ai = new GoogleGenAI({ apiKey });
       console.log("Connecting to Live API with model:", MODEL_NAME);
       
       const sessionPromise = ai.live.connect({
@@ -778,6 +789,7 @@ export default function App() {
     } else {
       // FAST PATH: Use generativeContent for immediate text-only response
       setIsAiThinking(true);
+      setSearchStatus("");
       try {
         const apiKey = userApiKey || HARDCODED_API_KEY || process.env.API_KEY || process.env.GEMINI_API_KEY;
         if (!apiKey) {
@@ -787,106 +799,153 @@ export default function App() {
           return;
         }
 
-        const genAI = new GoogleGenerativeAI(apiKey);
-        const model = genAI.getGenerativeModel(
-          { model: TEXT_MODEL_NAME },
-          { apiVersion: "v1beta" }
-        );
+        const ai = new GoogleGenAI({ apiKey });
         
-        // Build history-aware context (last 10 turns)
-        const historyContext: any[] = transcript
-          .slice(-10)
+        // Helper to trim history to stay within reasonable limits
+        const trimHistory = (history: any[]) => {
+          let totalLength = 0;
+          const trimmed = [];
+          // Keep last 15 messages max or up to 20000 chars roughly to save quota
+          const maxMessages = 10; 
+          const maxChars = 20000;
+          
+          for (let i = history.length - 1; i >= 0; i--) {
+            const h = history[i];
+            const text = h.text || "";
+            if (trimmed.length < maxMessages && (totalLength + text.length) < maxChars) {
+              trimmed.unshift(h);
+              totalLength += text.length;
+            } else {
+              break;
+            }
+          }
+          return trimmed;
+        };
+
+        const historyContext: any[] = trimHistory(transcript)
           .filter(t => t.text) 
           .map(t => ({
-            role: t.role,
+            role: t.role === 'model' ? 'model' : 'user',
             parts: [{ text: t.text }]
           }));
         
         let messages: any[] = [...historyContext, { role: 'user', parts: [{ text: textToSend }] }];
         let finalResponse = "";
+        let modelMessageStarted = false;
 
-        const generateWithRetry = async (currentMessages: any[], maxRetries = 2) => {
+        // Improved retry logic with exponential backoff
+        const withRetry = async <T,>(fn: () => Promise<T>, maxRetries = 3): Promise<T> => {
           for (let attempt = 0; attempt <= maxRetries; attempt++) {
             try {
-              return await model.generateContent({
-                contents: currentMessages,
-                tools: [
-                  { functionDeclarations: [
-                    GET_MEDIA_CONTENT_TOOL as any, 
-                    GET_COLLEGE_INFO_TOOL as any,
-                    GET_CACHED_ANSWER_TOOL as any,
-                    SAVE_QUESTION_ANSWER_TOOL as any
-                  ] }
-                ] as any,
-                systemInstruction: SYSTEM_INSTRUCTION
-              });
+              return await fn();
             } catch (error: any) {
-              const msg = error?.message || "";
-              const isQuota = msg.includes("429") || msg.includes("quota") || msg.includes("RESOURCE_EXHAUSTED");
+              const msg = (error?.message || "").toLowerCase();
+              const isQuota = msg.includes("429") || msg.includes("quota") || msg.includes("resource_exhausted");
               if (isQuota && attempt < maxRetries) {
-                const delay = Math.pow(2, attempt) * 2000;
-                console.warn(`Quota exhausted. Retrying in ${delay}ms...`);
+                const delay = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
+                console.warn(`Retry attempt ${attempt + 1} after ${Math.round(delay)}ms due to quota...`);
                 await new Promise(r => setTimeout(r, delay));
                 continue;
               }
               throw error;
             }
           }
+          throw new Error("Max retries exceeded");
         };
 
-        for (let i = 0; i < 5; i++) {
-          const result: any = await generateWithRetry(messages);
-          const response = result.response;
-          const toolCalls = response.functionCalls();
-          if (toolCalls && toolCalls.length > 0) {
+        // Tool calling loop
+        for (let loop = 0; loop < 5; loop++) {
+          const result = await withRetry(() => ai.models.generateContentStream({
+            model: TEXT_MODEL_NAME,
+            contents: messages,
+            config: {
+              systemInstruction: SYSTEM_INSTRUCTION,
+              candidateCount: 1,
+              tools: [{ 
+                functionDeclarations: [
+                  GET_MEDIA_CONTENT_TOOL as any, 
+                  GET_COLLEGE_INFO_TOOL as any,
+                  GET_CACHED_ANSWER_TOOL as any,
+                  SAVE_QUESTION_ANSWER_TOOL as any
+                ] 
+              } as any]
+            }
+          }));
+
+          // Check for tool calls first in the aggregated response
+          // Wait for first chunk or full response if it contains tool calls
+          let hasToolCall = false;
+          let aggregatedResponse = null;
+
+          try {
+            // We need to check if there are function calls.
+            for await (const chunk of result) {
+              if (chunk.functionCalls && chunk.functionCalls.length > 0) {
+                hasToolCall = true;
+                if (!aggregatedResponse) aggregatedResponse = chunk;
+                setSearchStatus("جارٍ البحث في قاعدة البيانات");
+                break; 
+              }
+              
+              // If we find text, it's not a tool call (usually)
+              if (chunk.text) {
+                setIsAiThinking(false);
+                setSearchStatus("");
+                // Start streaming text to UI - ensure we only add the message object once
+                if (!modelMessageStarted) {
+                   setTranscript(prev => [...prev, { role: 'model', text: "" }]);
+                   modelMessageStarted = true;
+                }
+                
+                finalResponse += chunk.text;
+                // Update the last message in current transcript
+                setTranscript(prev => {
+                  const updated = [...prev];
+                  if (updated.length > 0 && updated[updated.length - 1].role === 'model') {
+                    updated[updated.length - 1] = { ...updated[updated.length - 1], text: finalResponse };
+                  }
+                  return updated;
+                });
+              }
+            }
+          } catch (streamErr) {
+            console.error("Stream processing error:", streamErr);
+            throw streamErr;
+          }
+
+          if (hasToolCall && aggregatedResponse && aggregatedResponse.functionCalls) {
             setIsSearching(true);
             const toolResponses = [];
             
-            // Add model's complete response to history to preserve thought signatures
-            const modelContent = result.candidates?.[0]?.content;
+            // Add model's tool call content to messages history
+            // We need the full content object from the candidate
+            const modelContent = aggregatedResponse.candidates?.[0]?.content;
             if (modelContent) {
               messages.push(modelContent);
             }
 
-            for (const call of toolCalls) {
+            for (const call of aggregatedResponse.functionCalls) {
               const resText = await handleTool(call.name, call.args);
+              setSearchStatus("تم الوصول إلى المعلومة");
               toolResponses.push({
-                functionResponse: {
-                  name: call.name,
-                  response: { result: resText }
-                }
+                name: call.name,
+                id: call.id,
+                response: { result: resText }
               });
             }
             
-            // Add our responses to history
-            messages.push({ role: 'function', parts: toolResponses });
+            messages.push({ role: 'user', parts: toolResponses.map(r => ({ functionResponse: r })) });
+            setSearchStatus("جارٍ تلخيص المعلومة");
             setIsSearching(false);
+            // Continue the loop to get the next response from model
           } else {
-            // Robust text extraction using the response.text() method as per standard SDK
-            try {
-              finalResponse = response.text() || "";
-            } catch (e) {
-              finalResponse = "";
-            }
-            
-            // Fallback if .text() is empty or fails but parts exist
-            if (!finalResponse && result.candidates?.[0]?.content?.parts) {
-              finalResponse = result.candidates[0].content.parts
-                .filter(p => p.text)
-                .map(p => p.text)
-                .join(" ");
-            }
-
-            if (!finalResponse) {
-               finalResponse = "عذراً، لم أستطع توليد رد نصي حالياً. حاول إعادة صياغة السؤال.";
-            }
+            // No tool calls found in the stream (already processed text if any)
             break;
           }
         }
 
-        if (finalResponse) {
-          setTranscript(prev => [...prev.slice(-20), { role: 'model', text: finalResponse }]);
-        }
+        // Cleanup search status
+        setSearchStatus("");
       } catch (err: any) {
         console.error("Static Chat Error:", err);
         const errorMsg = typeof err === 'string' ? err : (err.message || JSON.stringify(err));
@@ -1170,7 +1229,9 @@ export default function App() {
                   className="flex items-center gap-2 p-4 bg-orange-500/10 rounded-2xl border border-orange-500/20 my-2"
                 >
                   <RefreshCcw size={14} className="text-orange-500 animate-spin" />
-                  <p className="text-xs text-orange-400 font-cairo">جاري البحث في قاعدة بيانات الكلية...</p>
+                  <p className="text-xs text-orange-400 font-cairo">
+                    {searchStatus || "جاري التفكير..."}
+                  </p>
                 </motion.div>
               )}
             </AnimatePresence>
@@ -1875,11 +1936,7 @@ function FileProcessor({ onComplete, onError, generateEmbedding }: { onComplete:
       setProcessing(false);
       return;
     }
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel(
-      { model: "gemini-1.5-flash" },
-      { apiVersion: "v1beta" }
-    );
+    const ai = new GoogleGenAI({ apiKey });
 
     for (const file of files) {
       try {
@@ -1910,7 +1967,8 @@ function FileProcessor({ onComplete, onError, generateEmbedding }: { onComplete:
             setProgress(`جاري معالجة الجزء ${i + 1} من ${chunks.length} لملف ${file.name}...`);
             
             try {
-              const result = await model.generateContent({
+              const result = await ai.models.generateContent({
+                model: TEXT_MODEL_NAME,
                 contents: [{ role: "user", parts: [{ text: `قم باستخراج كافة المعلومات الهامة من هذا النص وحولها إلى بيانات منظمة لقاعدة بيانات الكلية. 
                 يجب أن تكون المخرجات عبارة عن قائمة من الكائنات (JSON Array of Objects).
                 كل كائن يجب أن يحتوي على:
@@ -1919,16 +1977,16 @@ function FileProcessor({ onComplete, onError, generateEmbedding }: { onComplete:
                 - tags: قائمة كلمات مفتاحية مرتبطة.
                 
                 النص: ${chunks[i]}` }]}],
-                generationConfig: {
+                config: {
                   responseMimeType: "application/json",
                   responseSchema: {
-                    type: SchemaType.ARRAY,
+                    type: Type.ARRAY,
                     items: {
-                      type: SchemaType.OBJECT,
+                      type: Type.OBJECT,
                       properties: {
-                        category: { type: SchemaType.STRING },
-                        content: { type: SchemaType.STRING },
-                        tags: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING } }
+                        category: { type: Type.STRING },
+                        content: { type: Type.STRING },
+                        tags: { type: Type.ARRAY, items: { type: Type.STRING } }
                       },
                       required: ["category", "content"]
                     }
@@ -1936,7 +1994,7 @@ function FileProcessor({ onComplete, onError, generateEmbedding }: { onComplete:
                 }
               });
 
-              const extractedData = JSON.parse(result.response.text());
+              const extractedData = JSON.parse(result.text.trim());
               if (Array.isArray(extractedData)) {
                 for (const item of extractedData) {
                   // إنشاء الـ Embedding للبيانات المستخرجة (RAG)

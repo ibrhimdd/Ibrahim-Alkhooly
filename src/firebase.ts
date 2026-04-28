@@ -23,21 +23,10 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 
-// Test Connection as per guidelines
-async function testConnection() {
-  try {
-    // Try to get a non-existent doc from server to verify connection
-    await getDocFromServer(doc(db, '_connection_test_', 'ping'));
-    console.log("Firestore connection verified.");
-  } catch (error: any) {
-    if (error?.message?.includes('offline')) {
-      console.error("Firestore appears to be offline. Check configuration.");
-    } else {
-      console.warn("Firestore connection test finished (likely doc not found, which is fine):", error.message);
-    }
-  }
+// Support function for connection check in App.tsx
+export async function pingFirestore() {
+  return await getDocFromServer(doc(db, '_connection_test_', 'ping'));
 }
-testConnection();
 
 // Helper for Firestore error handling as per guidelines
 export enum OperationType {
@@ -51,6 +40,7 @@ export enum OperationType {
 
 export interface FirestoreErrorInfo {
   error: string;
+  isQuotaError?: boolean;
   operationType: OperationType;
   path: string | null;
   databaseId: string;
@@ -70,8 +60,12 @@ export interface FirestoreErrorInfo {
 }
 
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errMsg = error instanceof Error ? error.message : String(error);
+  const isQuotaError = errMsg.includes('Quota') || errMsg.includes('exhausted') || errMsg.includes('8 RESOURCE_EXHAUSTED');
+
   const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
+    error: errMsg,
+    isQuotaError,
     authInfo: {
       userId: auth.currentUser?.uid,
       email: auth.currentUser?.email,
@@ -503,21 +497,27 @@ export async function getAllCollegeInfo() {
 export async function getCachedQuestion(question: string) {
   const path = 'questions_cache';
   try {
+    // 1. Try exact match first (normalized) - we'll store a normalized version for efficiency
     const normalizedTarget = normalizeArabic(question);
     
-    // Fetch all for client-side fuzzy matching to handle variations (Arabic letters, extra spaces, etc.)
-    const snapshot = await getDocs(collection(db, path));
-    const allCached = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() as any }));
+    const q = query(
+      collection(db, path),
+      where('normalizedQuestion', '==', normalizedTarget),
+      limit(1)
+    );
     
-    const matched = allCached.find(c => normalizeArabic(c.question) === normalizedTarget);
+    const snapshot = await getDocs(q);
     
-    if (matched) {
-      const docRef = doc(db, path, matched.id);
+    if (!snapshot.empty) {
+      const matchDoc = snapshot.docs[0];
+      const data = matchDoc.data() as any;
+      
+      const docRef = doc(db, path, matchDoc.id);
       await updateDoc(docRef, {
-        count: (matched.count || 0) + 1,
+        count: (data.count || 0) + 1,
         lastAsked: serverTimestamp()
       });
-      return matched;
+      return { id: matchDoc.id, ...data };
     }
     return null;
   } catch (error) {
@@ -532,12 +532,17 @@ export async function addCachedQuestion(question: string, answer: string) {
     const normalizedTarget = normalizeArabic(question);
     
     // Check if it already exists (normalized)
-    const snapshot = await getDocs(collection(db, path));
-    const exists = snapshot.docs.some(doc => normalizeArabic(doc.data().question) === normalizedTarget);
+    const q = query(
+      collection(db, path),
+      where('normalizedQuestion', '==', normalizedTarget),
+      limit(1)
+    );
+    const snapshot = await getDocs(q);
     
-    if (!exists) {
+    if (snapshot.empty) {
       await addDoc(collection(db, path), {
         question: question.trim(),
+        normalizedQuestion: normalizedTarget,
         answer: answer.trim(),
         timestamp: serverTimestamp(),
         count: 1,
