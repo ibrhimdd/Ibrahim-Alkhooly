@@ -88,6 +88,6 @@ export const SAVE_QUESTION_ANSWER_TOOL = {
   },
 };
 
-export const LIVE_MODEL_NAME = "gemini-3.1-flash-live-preview";
-export const TEXT_MODEL_NAME = "gemini-3.1-flash-lite-preview";
+export const LIVE_MODEL_NAME = "gemini-1.5-flash"; 
+export const MODEL_NAME = "gemini-1.5-flash";
 export const MODEL_NAME = LIVE_MODEL_NAME; 
