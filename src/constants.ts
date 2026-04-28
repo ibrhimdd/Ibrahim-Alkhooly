@@ -89,5 +89,5 @@ export const SAVE_QUESTION_ANSWER_TOOL = {
 };
 
 export const LIVE_MODEL_NAME = "gemini-1.5-flash"; 
-export const MODEL_NAME = "gemini-1.5-flash";
+export const TEXT_MODEL_NAME = "gemini-1.5-flash";
 export const MODEL_NAME = LIVE_MODEL_NAME; 
