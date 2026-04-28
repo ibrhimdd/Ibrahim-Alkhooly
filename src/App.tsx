@@ -888,7 +888,8 @@ export default function App() {
             config: {
               systemInstruction: SYSTEM_INSTRUCTION,
               candidateCount: 1,
-              maxOutputTokens: 300,
+              maxOutputTokens: 150,
+              temperature: 0,
               tools: [{ 
                 functionDeclarations: [
                   GET_MEDIA_CONTENT_TOOL as any, 
