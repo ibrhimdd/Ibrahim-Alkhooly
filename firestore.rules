@@ -20,9 +20,13 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isVerified() && 
-        (request.auth.token.email.lower() == "ibrahimalkhooly@gmail.com" || 
-         request.auth.uid == "BcB2OWFaJqTS2sxMAolO8OEAK1r1");
+      return isSignedIn() && (
+        request.auth.uid == "BcB2OWFaJqTS2sxMAolO8OEAK1r1" ||
+        (isVerified() && "email" in request.auth.token && (
+          request.auth.token.email.lower() == "ibrahimalkhooly@gmail.com" || 
+          request.auth.token.email.lower() == "azaaabdelslambadr@gmail.com"
+        ))
+      );
     }
 
     function isValidId(id) {
@@ -45,21 +49,29 @@ service cloud.firestore {
       return data.keys().hasAll(['queryKey', 'type', 'url', 'title']) &&
              data.queryKey is string && data.queryKey.size() > 0 &&
              data.type in ['image', 'video'] &&
-             data.url is string && data.url.matches("^https?://.*") &&
-             data.title is string && data.title.size() > 0;
+             data.url is string && data.url.size() > 0 &&
+             data.title is string && data.title.size() > 0 &&
+             (!('description' in data) || data.description is string) &&
+             (!('embedding' in data) || data.embedding is list) &&
+             (!('keywords' in data) || data.keywords is list) &&
+             (!('createdAt' in data) || data.createdAt is timestamp);
     }
 
     function isValidInfo(data) {
       return data.keys().hasAll(['category', 'content']) &&
              data.category is string && data.category.size() > 0 &&
-             data.content is string && data.content.size() > 0;
+             data.content is string && data.content.size() > 0 &&
+             (!('embedding' in data) || data.embedding is list) &&
+             (!('keywords' in data) || data.keywords is list) &&
+             (!('lastUpdated' in data) || data.lastUpdated is timestamp) &&
+             (!('processedAt' in data) || data.processedAt is string) &&
+             (!('sourceFile' in data) || data.sourceFile is string);
     }
 
     function isValidCache(data) {
       return data.keys().hasAll(['question', 'answer']) &&
-             data.keys().size() <= 6 &&
+             data.keys().hasOnly(['question', 'answer', 'timestamp', 'lastAsked', 'count']) &&
              data.question is string && data.question.size() > 0 && data.question.size() <= 1000 &&
-             (!('normalizedQuestion' in data) || (data.normalizedQuestion is string && data.normalizedQuestion.size() <= 1500)) &&
              data.answer is string && data.answer.size() > 0 && data.answer.size() <= 10000 &&
              (!('timestamp' in data) || data.timestamp is timestamp) &&
              (!('lastAsked' in data) || data.lastAsked is timestamp) &&
@@ -86,9 +98,9 @@ service cloud.firestore {
 
     match /questions_cache/{cacheId} {
       allow read: if true;
-      allow create: if isAdmin() || isValidCache(incoming());
-      allow update: if isAdmin() || (isValidCache(incoming()) && 
-                    incoming().diff(existing()).affectedKeys().hasOnly(['count', 'lastAsked']));
+      allow create: if isValidCache(incoming());
+      allow update: if isValidCache(incoming()) && 
+                    incoming().diff(existing()).affectedKeys().hasOnly(['count', 'lastAsked']);
       allow delete: if isAdmin();
     }
   }

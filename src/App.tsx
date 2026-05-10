@@ -21,9 +21,7 @@ import {
   ExternalLink,
   Key,
   X,
-  Send,
-  Settings2,
-  Plus
+  Send
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AudioHandler } from './utils/audio';
@@ -31,6 +29,7 @@ import {
   SYSTEM_INSTRUCTION, 
   LIVE_MODEL_NAME,
   TEXT_MODEL_NAME,
+  EMBEDDING_MODEL_NAME,
   MODEL_NAME, 
   GET_MEDIA_CONTENT_TOOL, 
   GET_COLLEGE_INFO_TOOL,
@@ -42,7 +41,6 @@ import {
   addMedia, 
   addCollegeInfo, 
   auth, 
-  db,
   getCollegeInfoByQuery, 
   getAllMedia, 
   getAllCollegeInfo, 
@@ -56,7 +54,6 @@ import {
   deleteCachedQuestion,
   migrateDataToEmbeddings
 } from './firebase';
-import { doc, getDocFromServer } from 'firebase/firestore';
 import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import * as pdfjsLib from 'pdfjs-dist';
 import mammoth from 'mammoth';
@@ -237,33 +234,8 @@ export default function App() {
   const [isActive, setIsActive] = useState(false);
   const [status, setStatus] = useState<'idle' | 'connecting' | 'active' | 'error'>('idle');
   const [transcript, setTranscript] = useState<{ role: 'user' | 'model', text?: string, media?: MediaItem }[]>([]);
-  const [searchStatus, setSearchStatus] = useState<string>("");
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isAiThinking, setIsAiThinking] = useState(false);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [selectedLiveModel, setSelectedLiveModel] = useState<string>(() => localStorage.getItem('live_model') || LIVE_MODEL_NAME);
-  const [selectedTextModel, setSelectedTextModel] = useState<string>(() => localStorage.getItem('text_model') || TEXT_MODEL_NAME);
-  const [customModelInput, setCustomModelInput] = useState("");
-
-  const liveModels = ["gemini-3.1-flash-live-preview", "gemini-2.5-flash-native-audio-preview-09-2025"];
-  const textModels = ["gemini-2.5-flash", "gemini-3.1-flash-lite-preview", "gemini-3-flash-preview"];
-
-  const handleUpdateModel = (type: 'live' | 'text', model: string) => {
-    if (type === 'live') {
-      setSelectedLiveModel(model);
-      localStorage.setItem('live_model', model);
-    } else {
-      setSelectedTextModel(model);
-      localStorage.setItem('text_model', model);
-    }
-  };
-
-  const addCustomModel = (type: 'live' | 'text') => {
-    if (!customModelInput.trim()) return;
-    handleUpdateModel(type, customModelInput.trim());
-    setCustomModelInput("");
-  };
-
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [currentResponse, setCurrentResponse] = useState('');
   const [showAdmin, setShowAdmin] = useState(false);
@@ -283,8 +255,8 @@ export default function App() {
       
       const ai = new GoogleGenAI({ apiKey });
       const result = await ai.models.embedContent({
-        model: "gemini-embedding-2-preview",
-        contents: [{ parts: [{ text }] }]
+        model: EMBEDDING_MODEL_NAME,
+        contents: [text]
       });
       
       if (result.embeddings && result.embeddings.length > 0) {
@@ -385,28 +357,19 @@ export default function App() {
   }, [transcript, currentResponse, isSearching, isAiThinking]);
 
   useEffect(() => {
-    // Test Firestore connection on mount with a lightweight check
+    // Test Firestore connection on mount
     const testConn = async () => {
       try {
-        setErrorMessage(null);
-        // Just try to get one doc metadata or a small ping to verify connectivity
-        await getDocFromServer(doc(db, '_connection_test_', 'ping')).catch(e => {
-            // Document missing is fine, but it verifies connection to server
-            if (e.message.includes('Quota') || e.message.includes('8 RESOURCE_EXHAUSTED')) throw e;
-        });
-        
+        const media = await getAllMedia();
+        console.log("Firestore connection test: Found", media.length, "media items.");
+        const info = await getAllCollegeInfo();
+        console.log("Firestore connection test: Found", info.length, "info items.");
         setIsDbConnected(true);
+        setErrorMessage(null);
       } catch (error: any) {
+        console.error("Firestore connection test failed:", error);
         setIsDbConnected(false);
-        const errMessage = error.message || "";
-        const isQuota = errMessage.includes('Quota') || errMessage.includes('8 RESOURCE_EXHAUSTED') || (error.message && error.message.startsWith('{') && JSON.parse(error.message).isQuotaError);
-        
-        if (isQuota) {
-          setErrorMessage("عذراً، نفذت حصة الاستخدام المجانية لليوم (Firestore Quota). سيتم استئناف الخدمة تلقائياً غداً. ⏳");
-        } else {
-          setErrorMessage("فشل الاتصال بقاعدة البيانات. تأكد من جودة الإنترنت أو إعدادات المشروع.");
-          console.error("Firestore connectivity error:", error);
-        }
+        setErrorMessage(error.message || "فشل الاتصال بقاعدة البيانات");
       }
     };
     testConn();
@@ -482,17 +445,18 @@ export default function App() {
       }
 
       const ai = new GoogleGenAI({ apiKey });
-      console.log("Connecting to Live API with model:", selectedLiveModel);
+      console.log("Connecting to Live API with model:", MODEL_NAME);
       
       const sessionPromise = ai.live.connect({
-        model: selectedLiveModel,
-
+        model: MODEL_NAME,
         config: {
           responseModalities: [Modality.AUDIO],
           speechConfig: {
             voiceConfig: { prebuiltVoiceConfig: { voiceName: "Zephyr" } },
           },
-          systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
+          systemInstruction: SYSTEM_INSTRUCTION,
+          inputAudioTranscription: {},
+          outputAudioTranscription: {},
           tools: [
             { functionDeclarations: [
               GET_MEDIA_CONTENT_TOOL as any, 
@@ -509,9 +473,11 @@ export default function App() {
             setIsActive(true);
           },
           onmessage: async (message: LiveServerMessage) => {
-            // Debug the message structure in console
-            console.log("Live Message Received:", JSON.stringify(message).substring(0, 500));
-
+            // Debug the message structure
+            if (message.serverContent || message.toolCall) {
+              console.log("Live Message Received:", JSON.stringify(message).substring(0, 500));
+            }
+            
             // Handle model content
             const modelTurn = message.serverContent?.modelTurn;
             if (modelTurn) {
@@ -526,32 +492,21 @@ export default function App() {
                     audioHandlerRef.current?.playChunk(part.inlineData.data);
                   }
                   
-                  // Handle text output (transcription or direct text)
-                  if (part.text) {
-                    console.log("Found text part in parts:", part.text);
-                    responseBuildingRef.current += part.text;
+                  // Handle text output - checking multiple possible fields
+                  const partText = part.text || (part as any).executableCode?.code;
+                  if (partText) {
+                    responseBuildingRef.current += partText;
                     setCurrentResponse(responseBuildingRef.current);
                   }
                 }
               }
               
-              // Direct text fallback (some versions use top level text)
+              // Fallback for some message structures that might put text at top level of modelTurn
               const directText = (modelTurn as any).text;
               if (directText && !responseBuildingRef.current.includes(directText)) {
-                console.log("Found direct text in modelTurn:", directText);
                 responseBuildingRef.current += directText;
                 setCurrentResponse(responseBuildingRef.current);
               }
-            }
-            
-            // Check for transcription in other parts of the message
-            const transcription = (message as any).serverContent?.modelTurn?.text || 
-                                (message as any).serverContent?.modelTurn?.parts?.[0]?.text;
-            
-            if (transcription && !responseBuildingRef.current.includes(transcription)) {
-               console.log("Found transcription in fallback check:", transcription);
-               responseBuildingRef.current = transcription;
-               setCurrentResponse(transcription);
             }
 
             // Handle interruption
@@ -567,7 +522,14 @@ export default function App() {
               setIsSpeaking(false);
               if (responseBuildingRef.current.trim()) {
                 const finalResponse = responseBuildingRef.current;
-                setTranscript(prev => [...prev.slice(-20), { role: 'model', text: finalResponse }]);
+                setTranscript(prev => {
+                  // Avoid duplicates if the transcription was already added via inputTranscription or other means
+                  const lastMsg = prev[prev.length - 1];
+                  if (lastMsg && lastMsg.role === 'model' && lastMsg.text === finalResponse) {
+                    return prev;
+                  }
+                  return [...prev.slice(-20), { role: 'model', text: finalResponse }];
+                });
                 responseBuildingRef.current = '';
                 setCurrentResponse('');
               }
@@ -576,7 +538,6 @@ export default function App() {
             // Handle tool calls
             const toolCalls = message.toolCall?.functionCalls;
             if (toolCalls) {
-              console.log("Received Tool Calls:", toolCalls);
               setIsSearching(true);
               
               const executeAndRespond = async () => {
@@ -605,7 +566,13 @@ export default function App() {
             const userText = message.serverContent?.inputTranscription?.text;
             if (userText) {
               console.log("User said:", userText);
-              setTranscript(prev => [...prev.slice(-20), { role: 'user', text: userText }]);
+              setTranscript(prev => {
+                const lastMsg = prev[prev.length - 1];
+                if (lastMsg && lastMsg.role === 'user' && lastMsg.text === userText) {
+                  return prev;
+                }
+                return [...prev.slice(-20), { role: 'user', text: userText }];
+              });
             }
           },
           onerror: (error: any) => {
@@ -816,7 +783,6 @@ export default function App() {
     } else {
       // FAST PATH: Use generativeContent for immediate text-only response
       setIsAiThinking(true);
-      setSearchStatus("");
       try {
         const apiKey = userApiKey || HARDCODED_API_KEY || process.env.API_KEY || process.env.GEMINI_API_KEY;
         if (!apiKey) {
@@ -826,19 +792,20 @@ export default function App() {
           return;
         }
 
+        const modelId = TEXT_MODEL_NAME.replace(/^models\//, "");
         const ai = new GoogleGenAI({ apiKey });
         
         // Helper to trim history to stay within reasonable limits
         const trimHistory = (history: any[]) => {
           let totalLength = 0;
           const trimmed = [];
-          // Keep last 15 messages max or up to 20000 chars roughly to save quota
-          const maxMessages = 10; 
-          const maxChars = 20000;
+          // Keep last 15 messages max or up to 30000 chars roughly
+          const maxMessages = 15;
+          const maxChars = 30000;
           
           for (let i = history.length - 1; i >= 0; i--) {
             const h = history[i];
-            const text = h.text || "";
+            const text = h.text || (h.parts?.[0]?.text) || "";
             if (trimmed.length < maxMessages && (totalLength + text.length) < maxChars) {
               trimmed.unshift(h);
               totalLength += text.length;
@@ -858,7 +825,6 @@ export default function App() {
         
         let messages: any[] = [...historyContext, { role: 'user', parts: [{ text: textToSend }] }];
         let finalResponse = "";
-        let modelMessageStarted = false;
 
         // Improved retry logic with exponential backoff
         const withRetry = async <T,>(fn: () => Promise<T>, maxRetries = 3): Promise<T> => {
@@ -869,7 +835,7 @@ export default function App() {
               const msg = (error?.message || "").toLowerCase();
               const isQuota = msg.includes("429") || msg.includes("quota") || msg.includes("resource_exhausted");
               if (isQuota && attempt < maxRetries) {
-                const delay = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
+                const delay = Math.pow(2, attempt) * 1000 + Math.random() * 1000; // start with ~1s
                 console.warn(`Retry attempt ${attempt + 1} after ${Math.round(delay)}ms due to quota...`);
                 await new Promise(r => setTimeout(r, delay));
                 continue;
@@ -880,16 +846,11 @@ export default function App() {
           throw new Error("Max retries exceeded");
         };
 
-        // Tool calling loop
-        for (let loop = 0; loop < 5; loop++) {
-          const result = await withRetry(() => ai.models.generateContentStream({
-            model: selectedTextModel,
+        for (let i = 0; i < 5; i++) {
+          const result = await withRetry(() => ai.models.generateContent({
+            model: modelId,
             contents: messages,
             config: {
-              systemInstruction: SYSTEM_INSTRUCTION,
-              candidateCount: 1,
-              maxOutputTokens: 150,
-              temperature: 0,
               tools: [{ 
                 functionDeclarations: [
                   GET_MEDIA_CONTENT_TOOL as any, 
@@ -897,84 +858,51 @@ export default function App() {
                   GET_CACHED_ANSWER_TOOL as any,
                   SAVE_QUESTION_ANSWER_TOOL as any
                 ] 
-              } as any]
+              }] as any,
+              systemInstruction: SYSTEM_INSTRUCTION
             }
           }));
 
-          // Check for tool calls first in the aggregated response
-          // Wait for first chunk or full response if it contains tool calls
-          let hasToolCall = false;
-          let aggregatedResponse = null;
+          const functionCalls = result.functionCalls;
 
-          try {
-            // We need to check if there are function calls.
-            for await (const chunk of result) {
-              if (chunk.functionCalls && chunk.functionCalls.length > 0) {
-                hasToolCall = true;
-                if (!aggregatedResponse) aggregatedResponse = chunk;
-                setSearchStatus("جارٍ البحث في قاعدة البيانات");
-                break; 
-              }
-              
-              // If we find text, it's not a tool call (usually)
-              if (chunk.text) {
-                setIsAiThinking(false);
-                setSearchStatus("");
-                // Start streaming text to UI - ensure we only add the message object once
-                if (!modelMessageStarted) {
-                   setTranscript(prev => [...prev, { role: 'model', text: "" }]);
-                   modelMessageStarted = true;
-                }
-                
-                finalResponse += chunk.text;
-                // Update the last message in current transcript
-                setTranscript(prev => {
-                  const updated = [...prev];
-                  if (updated.length > 0 && updated[updated.length - 1].role === 'model') {
-                    updated[updated.length - 1] = { ...updated[updated.length - 1], text: finalResponse };
-                  }
-                  return updated;
-                });
-              }
-            }
-          } catch (streamErr) {
-            console.error("Stream processing error:", streamErr);
-            throw streamErr;
-          }
-
-          if (hasToolCall && aggregatedResponse && aggregatedResponse.functionCalls) {
+          if (functionCalls && functionCalls.length > 0) {
             setIsSearching(true);
             const toolResponses = [];
             
             // Add model's tool call content to messages history
-            // We need the full content object from the candidate
-            const modelContent = aggregatedResponse.candidates?.[0]?.content;
+            const modelContent = result.candidates?.[0]?.content;
             if (modelContent) {
               messages.push(modelContent);
             }
 
-            for (const call of aggregatedResponse.functionCalls) {
+            for (const call of functionCalls) {
               const resText = await handleTool(call.name, call.args);
-              setSearchStatus("تم الوصول إلى المعلومة");
               toolResponses.push({
-                name: call.name,
-                id: call.id,
-                response: { result: resText }
+                functionResponse: {
+                  name: call.name,
+                  response: { result: resText }
+                }
               });
             }
             
-            messages.push({ role: 'user', parts: toolResponses.map(r => ({ functionResponse: r })) });
-            setSearchStatus("جارٍ تلخيص المعلومة");
+            messages.push({ role: 'user', parts: toolResponses }); // Function responses are marked as user/function depending on SDK, but usually 'user' with parts is accepted or 'function'
             setIsSearching(false);
-            // Continue the loop to get the next response from model
           } else {
-            // No tool calls found in the stream (already processed text if any)
+            // No tool calls, show the final response
+            setIsAiThinking(false);
+            
+            const textResponse = result.text;
+            if (textResponse) {
+              finalResponse = textResponse;
+              setTranscript(prev => [...prev.slice(-20), { role: 'model', text: finalResponse }]);
+            }
             break;
           }
         }
 
-        // Cleanup search status
-        setSearchStatus("");
+        if (finalResponse) {
+          setTranscript(prev => [...prev.slice(-20), { role: 'model', text: finalResponse }]);
+        }
       } catch (err: any) {
         console.error("Static Chat Error:", err);
         const errorMsg = typeof err === 'string' ? err : (err.message || JSON.stringify(err));
@@ -1006,131 +934,6 @@ export default function App() {
       <AnimatePresence>
         {showIdleVideo && (
           <IdleVideoOverlay onDismiss={() => setShowIdleVideo(false)} />
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {isSettingsOpen && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm font-cairo"
-            onClick={() => setIsSettingsOpen(false)}
-          >
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.9, opacity: 0, y: 20 }}
-              className="bg-[#0f1115] border border-white/10 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl"
-              onClick={e => e.stopPropagation()}
-            >
-              <div className="p-6 border-b border-white/10 flex justify-between items-center bg-white/5">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-orange-500/20 rounded-lg">
-                    <Settings2 size={20} className="text-orange-500" />
-                  </div>
-                  <h3 className="text-xl font-bold text-white">إعدادات النماذج الذكية</h3>
-                </div>
-                <button onClick={() => setIsSettingsOpen(false)} className="text-white/40 hover:text-white transition-colors">
-                  <X size={24} />
-                </button>
-              </div>
-
-              <div className="p-6 space-y-8 max-h-[70vh] overflow-y-auto custom-scrollbar">
-                {/* Live Model Selection */}
-                <div className="space-y-4">
-                  <div className="flex items-center gap-2 text-orange-400">
-                    <Mic size={18} />
-                    <label className="text-sm font-bold uppercase tracking-wider">نموذج المحادثة الصوتية (Live API)</label>
-                  </div>
-                  <div className="grid grid-cols-1 gap-2">
-                    {liveModels.map(m => (
-                      <button
-                        key={m}
-                        onClick={() => handleUpdateModel('live', m)}
-                        className={`p-3 rounded-xl text-right text-xs transition-all border ${
-                          selectedLiveModel === m 
-                          ? 'bg-orange-500/20 border-orange-500 text-orange-400' 
-                          : 'bg-white/5 border-white/5 text-white/60 hover:border-white/20'
-                        }`}
-                      >
-                        {m}
-                      </button>
-                    ))}
-                    {/* If selected model is not in presets (custom) */}
-                    {!liveModels.includes(selectedLiveModel) && (
-                      <div className="p-3 rounded-xl text-right text-xs bg-orange-500/20 border border-orange-500 text-orange-400 flex justify-between items-center">
-                        <span className="bg-orange-500 text-white px-2 py-0.5 rounded text-[10px] font-bold">مخصص</span>
-                        {selectedLiveModel}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Text Model Selection */}
-                <div className="space-y-4">
-                  <div className="flex items-center gap-2 text-cyan-400">
-                    <MessageSquare size={18} />
-                    <label className="text-sm font-bold uppercase tracking-wider">نموذج المحادثة النصية (Chat API)</label>
-                  </div>
-                  <div className="grid grid-cols-1 gap-2">
-                    {textModels.map(m => (
-                      <button
-                        key={m}
-                        onClick={() => handleUpdateModel('text', m)}
-                        className={`p-3 rounded-xl text-right text-xs transition-all border ${
-                          selectedTextModel === m 
-                          ? 'bg-cyan-500/20 border-cyan-500 text-cyan-400' 
-                          : 'bg-white/5 border-white/5 text-white/60 hover:border-white/20'
-                        }`}
-                      >
-                        {m}
-                      </button>
-                    ))}
-                    {!textModels.includes(selectedTextModel) && (
-                      <div className="p-3 rounded-xl text-right text-xs bg-cyan-500/20 border border-cyan-500 text-cyan-400 flex justify-between items-center">
-                        <span className="bg-cyan-500 text-white px-2 py-0.5 rounded text-[10px] font-bold">مخصص</span>
-                        {selectedTextModel}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Add Custom Model */}
-                <div className="pt-4 border-t border-white/10">
-                  <p className="text-xs text-white/40 mb-3 text-right">إضافة موديل مخصص جديد:</p>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={customModelInput}
-                      onChange={e => setCustomModelInput(e.target.value)}
-                      placeholder="اسم الموديل (مثلاً gemini-2.0-flash)"
-                      className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-orange-500/50 transition-all text-left"
-                    />
-                  </div>
-                  <div className="flex gap-2 mt-2">
-                    <button
-                      onClick={() => addCustomModel('live')}
-                      className="flex-1 bg-white/5 hover:bg-orange-500/20 border border-white/10 hover:border-orange-500/50 rounded-xl p-3 text-xs text-white/70 hover:text-orange-400 transition-all flex items-center justify-center gap-2"
-                    >
-                      <Plus size={14} /> صوتي
-                    </button>
-                    <button
-                      onClick={() => addCustomModel('text')}
-                      className="flex-1 bg-white/5 hover:bg-cyan-500/20 border border-white/10 hover:border-cyan-500/50 rounded-xl p-3 text-xs text-white/70 hover:text-cyan-400 transition-all flex items-center justify-center gap-2"
-                    >
-                      <Plus size={14} /> نصي
-                    </button>
-                  </div>
-                </div>
-
-                <p className="text-[10px] text-white/30 text-center pt-4">
-                  * سيتم حفظ اختياراتك في هذا المتصفح بشكل تلقائي.
-                </p>
-              </div>
-            </motion.div>
-          </motion.div>
         )}
       </AnimatePresence>
 
@@ -1170,16 +973,8 @@ export default function App() {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <button
-                onClick={() => setIsSettingsOpen(true)}
-                className="p-2 bg-white/5 hover:bg-white/10 rounded-xl text-white/70 hover:text-white transition-all border border-white/10"
-                title="إعدادات النماذج"
-              >
-                <Settings2 size={18} />
-              </button>
               <button 
                 onClick={() => setShowKeyModal(true)}
-
                 title="إعدادات المفتاح"
                 className="p-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all"
               >
@@ -1391,9 +1186,7 @@ export default function App() {
                   className="flex items-center gap-2 p-4 bg-orange-500/10 rounded-2xl border border-orange-500/20 my-2"
                 >
                   <RefreshCcw size={14} className="text-orange-500 animate-spin" />
-                  <p className="text-xs text-orange-400 font-cairo">
-                    {searchStatus || "جاري التفكير..."}
-                  </p>
+                  <p className="text-xs text-orange-400 font-cairo">جاري البحث في قاعدة بيانات الكلية...</p>
                 </motion.div>
               )}
             </AnimatePresence>
@@ -1720,7 +1513,6 @@ export default function App() {
                         generateEmbedding={generateEmbedding}
                         onComplete={() => setRefreshKey(prev => prev + 1)} 
                         onError={(msg) => setErrorMessage(msg)}
-                        selectedTextModel={selectedTextModel}
                       />
                     </section>
                   </div>
@@ -2078,7 +1870,7 @@ function InfoList({ refreshKey, onEdit }: { refreshKey: number, onEdit: (item: a
   );
 }
 
-function FileProcessor({ onComplete, onError, generateEmbedding, selectedTextModel }: { onComplete: () => void, onError: (msg: string) => void, generateEmbedding: (text: string) => Promise<number[] | null>, selectedTextModel: string }) {
+function FileProcessor({ onComplete, onError, generateEmbedding }: { onComplete: () => void, onError: (msg: string) => void, generateEmbedding: (text: string) => Promise<number[] | null> }) {
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState('');
   const [files, setFiles] = useState<File[]>([]);
@@ -2099,7 +1891,8 @@ function FileProcessor({ onComplete, onError, generateEmbedding, selectedTextMod
       setProcessing(false);
       return;
     }
-    const ai = new GoogleGenAI({ apiKey });
+    const modelId = TEXT_MODEL_NAME.replace(/^models\//, "");
+    const ai = new GoogleGenAI({ apiKey, apiVersion: "v1beta" });
 
     for (const file of files) {
       try {
@@ -2131,7 +1924,7 @@ function FileProcessor({ onComplete, onError, generateEmbedding, selectedTextMod
             
             try {
               const result = await ai.models.generateContent({
-                model: selectedTextModel,
+                model: modelId,
                 contents: [{ role: "user", parts: [{ text: `قم باستخراج كافة المعلومات الهامة من هذا النص وحولها إلى بيانات منظمة لقاعدة بيانات الكلية. 
                 يجب أن تكون المخرجات عبارة عن قائمة من الكائنات (JSON Array of Objects).
                 كل كائن يجب أن يحتوي على:
@@ -2157,7 +1950,7 @@ function FileProcessor({ onComplete, onError, generateEmbedding, selectedTextMod
                 }
               });
 
-              const extractedData = JSON.parse(result.text.trim());
+              const extractedData = JSON.parse(result.text || "[]");
               if (Array.isArray(extractedData)) {
                 for (const item of extractedData) {
                   // إنشاء الـ Embedding للبيانات المستخرجة (RAG)

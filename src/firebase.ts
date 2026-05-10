@@ -23,10 +23,21 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 
-// Support function for connection check in App.tsx
-export async function pingFirestore() {
-  return await getDocFromServer(doc(db, '_connection_test_', 'ping'));
+// Test Connection as per guidelines
+async function testConnection() {
+  try {
+    // Try to get a non-existent doc from server to verify connection
+    await getDocFromServer(doc(db, '_connection_test_', 'ping'));
+    console.log("Firestore connection verified.");
+  } catch (error: any) {
+    if (error?.message?.includes('offline')) {
+      console.error("Firestore appears to be offline. Check configuration.");
+    } else {
+      console.warn("Firestore connection test finished (likely doc not found, which is fine):", error.message);
+    }
+  }
 }
+testConnection();
 
 // Helper for Firestore error handling as per guidelines
 export enum OperationType {
@@ -40,7 +51,6 @@ export enum OperationType {
 
 export interface FirestoreErrorInfo {
   error: string;
-  isQuotaError?: boolean;
   operationType: OperationType;
   path: string | null;
   databaseId: string;
@@ -60,12 +70,8 @@ export interface FirestoreErrorInfo {
 }
 
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
-  const errMsg = error instanceof Error ? error.message : String(error);
-  const isQuotaError = errMsg.includes('Quota') || errMsg.includes('exhausted') || errMsg.includes('8 RESOURCE_EXHAUSTED');
-
   const errInfo: FirestoreErrorInfo = {
-    error: errMsg,
-    isQuotaError,
+    error: error instanceof Error ? error.message : String(error),
     authInfo: {
       userId: auth.currentUser?.uid,
       email: auth.currentUser?.email,
@@ -139,6 +145,7 @@ export async function getMediaByQuery(searchQuery: string, queryVector?: number[
       // 1. Calculate Keyword Score
       const normalizedQueryKey = normalizeArabic(doc.queryKey || "");
       const normalizedTitle = normalizeArabic(doc.title || "");
+      const normalizedDescription = normalizeArabic(doc.description || "");
       
       // Exact matches get the highest priority
       if (normalizedQueryKey === normalizedQuery) keywordScore += 500;
@@ -147,6 +154,7 @@ export async function getMediaByQuery(searchQuery: string, queryVector?: number[
       // Full query inclusions
       if (normalizedQueryKey.includes(normalizedQuery) && normalizedQuery.length > 3) keywordScore += 200;
       if (normalizedTitle.includes(normalizedQuery) && normalizedQuery.length > 3) keywordScore += 200;
+      if (normalizedDescription.includes(normalizedQuery) && normalizedQuery.length > 3) keywordScore += 100;
       
       // Individual term matches
       let termsMatched = 0;
@@ -158,6 +166,10 @@ export async function getMediaByQuery(searchQuery: string, queryVector?: number[
         }
         if (normalizedTitle.includes(term)) {
           keywordScore += 60; // Slightly higher priority for title terms
+          matched = true;
+        }
+        if (normalizedDescription.includes(term)) {
+          keywordScore += 30; // Weight for description keywords
           matched = true;
         }
         if (matched) termsMatched++;
@@ -181,16 +193,10 @@ export async function getMediaByQuery(searchQuery: string, queryVector?: number[
     });
 
     // Filter results: Be more selective to avoid "guessing"
-    // If we have a very strong keyword match, accept lower semantic score.
-    // Otherwise, we need a decent combination or a strong semantic match.
     const filteredResults = scoredResults.filter(res => {
-      // Strong keyword match (exact or very close)
       if (res.keywordScore >= 200) return true;
-      // Decent hybrid match
       if (res.finalScore >= 150) return true;
-      // Strong semantic only match
       if (res.semanticScore > 0.75) return true;
-      
       return false;
     });
 
@@ -198,7 +204,7 @@ export async function getMediaByQuery(searchQuery: string, queryVector?: number[
 
     filteredResults.sort((a, b) => b.finalScore - a.finalScore);
     
-    // Return the top result(s)
+    // Return the top result only
     return filteredResults.slice(0, 1).map(r => r.doc);
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, path);
@@ -497,27 +503,21 @@ export async function getAllCollegeInfo() {
 export async function getCachedQuestion(question: string) {
   const path = 'questions_cache';
   try {
-    // 1. Try exact match first (normalized) - we'll store a normalized version for efficiency
     const normalizedTarget = normalizeArabic(question);
     
-    const q = query(
-      collection(db, path),
-      where('normalizedQuestion', '==', normalizedTarget),
-      limit(1)
-    );
+    // Fetch all for client-side fuzzy matching to handle variations (Arabic letters, extra spaces, etc.)
+    const snapshot = await getDocs(collection(db, path));
+    const allCached = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() as any }));
     
-    const snapshot = await getDocs(q);
+    const matched = allCached.find(c => normalizeArabic(c.question) === normalizedTarget);
     
-    if (!snapshot.empty) {
-      const matchDoc = snapshot.docs[0];
-      const data = matchDoc.data() as any;
-      
-      const docRef = doc(db, path, matchDoc.id);
+    if (matched) {
+      const docRef = doc(db, path, matched.id);
       await updateDoc(docRef, {
-        count: (data.count || 0) + 1,
+        count: (matched.count || 0) + 1,
         lastAsked: serverTimestamp()
       });
-      return { id: matchDoc.id, ...data };
+      return matched;
     }
     return null;
   } catch (error) {
@@ -532,17 +532,12 @@ export async function addCachedQuestion(question: string, answer: string) {
     const normalizedTarget = normalizeArabic(question);
     
     // Check if it already exists (normalized)
-    const q = query(
-      collection(db, path),
-      where('normalizedQuestion', '==', normalizedTarget),
-      limit(1)
-    );
-    const snapshot = await getDocs(q);
+    const snapshot = await getDocs(collection(db, path));
+    const exists = snapshot.docs.some(doc => normalizeArabic(doc.data().question) === normalizedTarget);
     
-    if (snapshot.empty) {
+    if (!exists) {
       await addDoc(collection(db, path), {
         question: question.trim(),
-        normalizedQuestion: normalizedTarget,
         answer: answer.trim(),
         timestamp: serverTimestamp(),
         count: 1,

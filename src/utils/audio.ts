@@ -67,9 +67,13 @@ export class AudioHandler {
           }
         }
         
-        const base64Data = btoa(
-          String.fromCharCode(...new Uint8Array(pcmData.buffer))
-        );
+        let binary = "";
+        const bytes = new Uint8Array(pcmData.buffer);
+        const len = bytes.byteLength;
+        for (let i = 0; i < len; i++) {
+          binary += String.fromCharCode(bytes[i]);
+        }
+        const base64Data = btoa(binary);
         this.onAudioData(base64Data);
       };
 
