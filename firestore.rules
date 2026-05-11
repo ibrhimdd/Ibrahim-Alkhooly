@@ -39,6 +39,7 @@ service cloud.firestore {
 
     function isValidMedia(data) {
       return data.keys().hasAll(['queryKey', 'type', 'url', 'title']) &&
+             data.keys().size() <= 10 &&
              data.queryKey is string && data.queryKey.size() > 0 &&
              data.type in ['image', 'video'] &&
              data.url is string && data.url.size() > 0 &&
@@ -51,6 +52,7 @@ service cloud.firestore {
 
     function isValidInfo(data) {
       return data.keys().hasAll(['category', 'content']) &&
+             data.keys().size() <= 10 &&
              data.category is string && data.category.size() > 0 &&
              data.content is string && data.content.size() > 0 &&
              (!('embedding' in data) || data.embedding is list) &&
@@ -62,7 +64,7 @@ service cloud.firestore {
 
     function isValidCache(data) {
       return data.keys().hasAll(['question', 'answer']) &&
-             data.keys().hasOnly(['question', 'answer', 'timestamp', 'lastAsked', 'count']) &&
+             data.keys().size() <= 6 &&
              data.question is string && data.question.size() > 0 && data.question.size() <= 1000 &&
              data.answer is string && data.answer.size() > 0 && data.answer.size() <= 10000 &&
              (!('timestamp' in data) || data.timestamp is timestamp) &&
@@ -87,23 +89,23 @@ service cloud.firestore {
     }
 
     match /media/{mediaId} {
-      allow read: if true;
+      allow get, list: if true;
       allow create: if isAdmin() && isValidMedia(incoming());
       allow update: if isAdmin() && isValidMedia(incoming());
       allow delete: if isAdmin();
     }
 
     match /college_info/{infoId} {
-      allow read: if true;
+      allow get, list: if true;
       allow create: if isAdmin() && isValidInfo(incoming());
       allow update: if isAdmin() && isValidInfo(incoming());
       allow delete: if isAdmin();
     }
 
     match /questions_cache/{cacheId} {
-      allow read: if true;
-      allow create: if isValidCache(incoming());
-      allow update: if isValidCache(incoming()) && 
+      allow get, list: if isSignedIn();
+      allow create: if isSignedIn() && isValidCache(incoming());
+      allow update: if isSignedIn() && isValidCache(incoming()) && 
                     incoming().diff(existing()).affectedKeys().hasOnly(['count', 'lastAsked']);
       allow delete: if isAdmin();
     }
