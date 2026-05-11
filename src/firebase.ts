@@ -10,6 +10,7 @@ import {
   addDoc, 
   serverTimestamp,
   doc,
+  setDoc,
   updateDoc,
   deleteDoc,
   orderBy,
@@ -129,6 +130,45 @@ function invalidateCache(path: string) {
   delete dbCache[path];
 }
 // --------------------------------------------------
+
+// --- Admin Management Functions ---
+export const addAdmin = async (email: string) => {
+  const path = 'admins';
+  try {
+    const cleanEmail = email.trim().toLowerCase();
+    await setDoc(doc(db, path, cleanEmail), {
+      email: cleanEmail,
+      addedAt: serverTimestamp(),
+      role: 'admin'
+    });
+    return true;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+    return false;
+  }
+};
+
+export const removeAdmin = async (email: string) => {
+  const path = 'admins';
+  try {
+    await deleteDoc(doc(db, path, email.toLowerCase()));
+    return true;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+    return false;
+  }
+};
+
+export const getAdmins = async () => {
+  const path = 'admins';
+  try {
+    const snapshot = await getDocs(collection(db, path));
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() as any }));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, path);
+    return [];
+  }
+};
 
 // Function to fetch media by query key (Hybrid: Semantic + Keyword)
 export async function getMediaByQuery(searchQuery: string, queryVector?: number[]) {

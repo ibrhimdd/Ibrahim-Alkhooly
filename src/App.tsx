@@ -52,7 +52,10 @@ import {
   addCachedQuestion,
   getAllCachedQuestions,
   deleteCachedQuestion,
-  migrateDataToEmbeddings
+  migrateDataToEmbeddings,
+  getAdmins,
+  addAdmin,
+  removeAdmin
 } from './firebase';
 import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import * as pdfjsLib from 'pdfjs-dist';
@@ -270,7 +273,10 @@ export default function App() {
     }
   };
 
-  const [adminTab, setAdminTab] = useState<'media' | 'info' | 'files' | 'stats'>('media');
+  const [adminTab, setAdminTab] = useState<'media' | 'info' | 'files' | 'stats' | 'admins'>('media');
+  const [adminList, setAdminList] = useState<any[]>([]);
+  const [newAdminEmail, setNewAdminEmail] = useState('');
+  const [isAdminLoading, setIsAdminLoading] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [user, setUser] = useState<any>(null);
   const [isMicCaptured, setIsMicCaptured] = useState(false);
@@ -381,6 +387,16 @@ export default function App() {
     };
     testConn();
   }, []);
+
+  useEffect(() => {
+    if (adminTab === 'admins') {
+      setIsAdminLoading(true);
+      getAdmins().then(list => {
+        setAdminList(list);
+        setIsAdminLoading(false);
+      });
+    }
+  }, [adminTab]);
 
   const clearTranscript = () => {
     setTranscript([]);
@@ -1435,6 +1451,14 @@ export default function App() {
                 >
                   الإحصائيات
                 </button>
+                {(user?.email === 'ibrahimalkhooly@gmail.com' || auth.currentUser?.uid === 'BcB2OWFaJqTS2sxMAolO8OEAK1r1') && (
+                  <button 
+                    onClick={() => setAdminTab('admins')}
+                    className={`flex-1 py-3 text-sm font-bold rounded-xl transition-all font-cairo ${adminTab === 'admins' ? 'bg-orange-600 text-white shadow-lg shadow-orange-600/20' : 'text-white/40 hover:text-white/60'}`}
+                  >
+                    إدارة المسؤولين
+                  </button>
+                )}
               </div>
 
               <div className="p-8 overflow-y-auto custom-scrollbar flex-1">
@@ -1528,6 +1552,83 @@ export default function App() {
                         onComplete={() => setRefreshKey(prev => prev + 1)} 
                         onError={(msg) => setErrorMessage(msg)}
                       />
+                    </section>
+                  </div>
+                ) : adminTab === 'admins' ? (
+                  <div className="space-y-12">
+                    <section className="p-8 bg-white/5 border border-white/10 rounded-[2.5rem] space-y-6">
+                      <h4 className="text-sm font-bold text-white/20 uppercase tracking-widest mb-4">إضافة مسؤول جديد</h4>
+                      <div className="flex gap-4">
+                        <input 
+                          type="email" 
+                          placeholder="البريد الإلكتروني (Gmail)" 
+                          value={newAdminEmail}
+                          onChange={(e) => setNewAdminEmail(e.target.value)}
+                          className="flex-1 bg-white/5 border border-white/10 p-4 rounded-2xl outline-none focus:border-orange-500/50 transition-all text-right font-cairo text-white"
+                        />
+                        <button 
+                          onClick={async () => {
+                            if (!newAdminEmail.includes('@')) {
+                              alert("يرجى إدخال بريد إلكتروني صحيح");
+                              return;
+                            }
+                            setIsAdminLoading(true);
+                            const success = await addAdmin(newAdminEmail);
+                            if (success) {
+                              setNewAdminEmail('');
+                              const list = await getAdmins();
+                              setAdminList(list);
+                            } else {
+                              alert("فشل في إضافة المسؤول. تأكد من صلاحياتك.");
+                            }
+                            setIsAdminLoading(false);
+                          }}
+                          disabled={isAdminLoading}
+                          className="px-8 py-4 bg-orange-600 hover:bg-orange-700 text-white font-bold rounded-2xl transition-all active:scale-95 disabled:opacity-50"
+                        >
+                          إضافة
+                        </button>
+                      </div>
+                    </section>
+
+                    <section className="space-y-4">
+                      <div className="flex justify-between items-center mb-6">
+                         <h4 className="text-sm font-bold text-white/20 uppercase tracking-widest">المسؤولون الحاليون</h4>
+                         <button 
+                          onClick={async () => {
+                            setIsAdminLoading(true);
+                            setAdminList(await getAdmins());
+                            setIsAdminLoading(false);
+                          }}
+                          className="text-[10px] text-orange-500 hover:underline"
+                         >تحديث القائمة</button>
+                      </div>
+                      <div className="grid gap-3">
+                        {adminList.map((adm) => (
+                          <div key={adm.id} className="bg-white/5 p-4 rounded-2xl border border-white/5 flex justify-between items-center group">
+                            <button 
+                              onClick={async () => {
+                                if (confirm(`هل أنت متأكد من حذف ${adm.email}؟`)) {
+                                  setIsAdminLoading(true);
+                                  await removeAdmin(adm.id);
+                                  setAdminList(await getAdmins());
+                                  setIsAdminLoading(false);
+                                }
+                              }}
+                              className="p-2 text-white/20 hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-all"
+                            >
+                              <MicOff size={16} />
+                            </button>
+                            <div className="text-right">
+                              <p className="font-bold text-white font-cairo">{adm.email}</p>
+                              <p className="text-[10px] text-white/20 font-mono">Added: {adm.addedAt?.seconds ? new Date(adm.addedAt.seconds * 1000).toLocaleDateString() : 'Just now'}</p>
+                            </div>
+                          </div>
+                        ))}
+                        {adminList.length === 0 && !isAdminLoading && (
+                          <p className="text-center py-10 text-white/20 font-cairo">لا يوجد مسؤولون مضافون حالياً</p>
+                        )}
+                      </div>
                     </section>
                   </div>
                 ) : (

@@ -2,11 +2,6 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // 0. Global Safety Net
-    match /{document=**} {
-      allow read, write: if false;
-    }
-
     // ===============================================================
     // Helper Functions
     // ===============================================================
@@ -22,11 +17,7 @@ service cloud.firestore {
     function isAdmin() {
       return isSignedIn() && (
         request.auth.uid == "BcB2OWFaJqTS2sxMAolO8OEAK1r1" ||
-        ("email" in request.auth.token && (
-          request.auth.token.email.lower() == "ibrahimalkhooly@gmail.com" || 
-          request.auth.token.email.lower() == "mostafaalsid11@gmail.com" ||
-          request.auth.token.email.lower() == "azaaabdelslambadr@gmail.com"
-        ))
+        ("email" in request.auth.token && exists(/databases/$(database)/documents/admins/$(request.auth.token.email.lower())))
       );
     }
 
@@ -83,6 +74,18 @@ service cloud.firestore {
     // Collection Rules
     // ===============================================================
 
+    match /_connection_test_/{docId} {
+      allow read: if true;
+    }
+
+    match /admins/{email} {
+      allow get, list: if isSignedIn();
+      allow write: if isSignedIn() && (
+        request.auth.uid == "BcB2OWFaJqTS2sxMAolO8OEAK1r1" ||
+        ("email" in request.auth.token && request.auth.token.email.lower() == "ibrahimalkhooly@gmail.com")
+      );
+    }
+
     match /media/{mediaId} {
       allow read: if true;
       allow create: if isAdmin() && isValidMedia(incoming());
@@ -103,6 +106,13 @@ service cloud.firestore {
       allow update: if isValidCache(incoming()) && 
                     incoming().diff(existing()).affectedKeys().hasOnly(['count', 'lastAsked']);
       allow delete: if isAdmin();
+    }
+
+    // ===============================================================
+    // Global Safety Net
+    // ===============================================================
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }
