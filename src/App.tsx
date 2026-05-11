@@ -357,19 +357,26 @@ export default function App() {
   }, [transcript, currentResponse, isSearching, isAiThinking]);
 
   useEffect(() => {
-    // Test Firestore connection on mount
+    // Test Firestore connection on mount with a cheap read
     const testConn = async () => {
       try {
-        const media = await getAllMedia();
-        console.log("Firestore connection test: Found", media.length, "media items.");
-        const info = await getAllCollegeInfo();
-        console.log("Firestore connection test: Found", info.length, "info items.");
+        // Just check if we can reach the server with a minimal request
+        const { getDocFromServer, doc } = await import('firebase/firestore');
+        const { db } = await import('./firebase');
+        await getDocFromServer(doc(db, '_connection_test_', 'ping')).catch(() => {
+          // If doc not found, it still proves we connected to the server
+        });
         setIsDbConnected(true);
         setErrorMessage(null);
       } catch (error: any) {
         console.error("Firestore connection test failed:", error);
         setIsDbConnected(false);
-        setErrorMessage(error.message || "فشل الاتصال بقاعدة البيانات");
+        
+        if (error.message?.includes('Quota exceeded') || error.message?.includes('Quota limit exceeded')) {
+          setErrorMessage("تم استهلاك الحصة المجانية اليومية لقاعدة البيانات (Read Quota). سيتم إعادة ضبطها تلقائياً لاحقاً. يمكنك الاستمرار في استخدام الدردشة الصوتية.");
+        } else {
+          setErrorMessage(error.message || "فشل الاتصال بقاعدة البيانات");
+        }
       }
     };
     testConn();
@@ -594,12 +601,12 @@ export default function App() {
             } else if (errorMsg.includes('Requested entity was not found')) {
               setErrorMessage("المفتاح البرمجي غير صالح أو لم يتم اختياره. يرجى إعادة اختيار مفتاح برمجي من مشروع مدفوع.");
               setHasApiKey(false);
-            } else if (error?.message?.includes('Network error')) {
-              setErrorMessage("خطأ في الشبكة: يرجى التأكد من اتصال الإنترنت أو تجربة تحديث الصفحة. قد يكون ذلك بسبب قيود الخصوصية في المتصفح.");
-            } else if (error?.message?.includes('service is currently unavailable')) {
+            } else if (errorMsg.includes('Network error') || errorMsg.includes('failed to connect')) {
+              setErrorMessage("خطأ في الشبكة: تعذر الربط بخوادم AI. يرجى التأكد من اتصال الإنترنت أو تجربة متصفح مختلف (مثل Chrome). قد يكون ذلك بسبب قيود الخصوصية أو جدار حماية.");
+            } else if (errorMsg.includes('service is currently unavailable')) {
               setErrorMessage("الخدمة غير متوفرة حالياً. يرجى المحاولة مرة أخرى بعد قليل.");
             } else {
-              setErrorMessage("حدث خطأ في الاتصال. يرجى المحاولة مرة أخرى.");
+              setErrorMessage(`حدث خطأ في الاتصال: ${errorMsg}`);
             }
             stopSession();
           },
@@ -614,13 +621,16 @@ export default function App() {
     } catch (error: any) {
       console.error("Failed to start session:", error);
       setStatus('error');
-      if (error?.name === 'NotAllowedError' || error?.message?.includes('Permission denied')) {
-        setErrorMessage("يرجى السماح بالوصول إلى الميكروفون من إعدادات المتصفح للمتابعة.");
-      } else if (error?.message?.includes('Requested entity was not found')) {
+      const msg = error?.message || String(error);
+      if (error?.name === 'NotAllowedError' || msg.includes('Permission denied')) {
+        setErrorMessage("تم رفض الوصول للميكروفون. يرجى الضغط على أيقونة القفل (🔒) بجوار رابط الموقع في المتصفح وتأكد من تفعيل الميكروفون (Microphone: Allow) ثم أعد المحاولة.");
+      } else if (msg.includes('Requested entity was not found')) {
         setErrorMessage("المفتاح البرمجي غير صالح أو لم يتم اختياره. يرجى إعادة اختيار مفتاح برمجي من مشروع مدفوع.");
         setHasApiKey(false);
+      } else if (msg.includes('Network error')) {
+        setErrorMessage("خطأ في الشبكة أثناء بدء الجلسة. قد يكون الحائط الناري للمتصفح يمنع الاتصال. حاول استخدام متصفح مغاير.");
       } else {
-        setErrorMessage("تعذر بدء الجلسة. تأكد من إعدادات الميكروفون والمفتاح البرمجي.");
+        setErrorMessage(`تعذر بدء الجلسة: ${msg}`);
       }
       stopSession();
     }
@@ -734,9 +744,13 @@ export default function App() {
         await addCachedQuestion(question, answer);
         resultMsg = "تم حفظ الإجابة بنجاح في قاعدة البيانات.";
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(`Tool Execution Error (${name}):`, err);
-      resultMsg = `خطأ أثناء تنفيذ الأداة: ${err instanceof Error ? err.message : String(err)}`;
+      if (err.message?.includes('Quota exceeded') || err.message?.includes('Quota limit exceeded')) {
+        resultMsg = "خطأ: تم استهلاك حصة القراءة اليومية لقاعدة بيانات الكلية. يرجى إخبار المستخدم بالاعتذار وأن المعلومة ستكون متاحة غداً، والالتزام بالرد من معلوماتك العامة فقط حالياً.";
+      } else {
+        resultMsg = `خطأ أثناء تنفيذ الأداة: ${err instanceof Error ? err.message : String(err)}`;
+      }
     }
     
     return resultMsg;

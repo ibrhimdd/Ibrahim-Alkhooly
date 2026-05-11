@@ -91,7 +91,7 @@ export const SAVE_QUESTION_ANSWER_TOOL = {
   },
 };
 
-export const LIVE_MODEL_NAME = "gemini-3.1-flash-live-preview";
-export const TEXT_MODEL_NAME = "gemini-3-flash-preview";
-export const EMBEDDING_MODEL_NAME = "gemini-embedding-2-preview";
+export const LIVE_MODEL_NAME = "models/gemini-3.1-flash-live-preview";
+export const TEXT_MODEL_NAME = "models/gemini-3-flash-preview";
+export const EMBEDDING_MODEL_NAME = "models/gemini-embedding-2-preview";
 export const MODEL_NAME = LIVE_MODEL_NAME; 
