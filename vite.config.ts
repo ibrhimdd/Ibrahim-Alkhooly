@@ -21,21 +21,13 @@ export default defineConfig(({ mode }) => {
           short_name: 'IbrahimBot',
           description: 'AI Bot by Ibrahim Elkhooly',
           theme_color: '#f97316',
+          background_color: '#000000',
+          display: 'standalone',
           icons: [
             {
-              src: 'pwa-192x192.png',
-              sizes: '192x192',
-              type: 'image/png'
-            },
-            {
-              src: 'pwa-512x512.png',
-              sizes: '512x512',
-              type: 'image/png'
-            },
-            {
-              src: 'pwa-512x512.png',
-              sizes: '512x512',
-              type: 'image/png',
+              src: 'icon.svg',
+              sizes: 'any',
+              type: 'image/svg+xml',
               purpose: 'any maskable'
             }
           ]

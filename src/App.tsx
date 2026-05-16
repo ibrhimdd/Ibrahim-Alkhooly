@@ -1,3 +1,4 @@
+import { useRegisterSW } from 'virtual:pwa-register/react';
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI, Modality, LiveServerMessage, Type, ThinkingLevel } from "@google/genai";
 import { 
@@ -299,6 +300,17 @@ export default function App() {
   
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isStandalone, setIsStandalone] = useState(false);
+  const [showIosHint, setShowIosHint] = useState(false);
+
+  // Register Service Worker
+  useRegisterSW({
+    onRegistered(r) {
+      console.log('SW Registered');
+    },
+    onRegisterError(error) {
+      console.error('SW registration error', error);
+    }
+  });
 
   useEffect(() => {
     // Check if app is running in standalone mode
@@ -328,11 +340,28 @@ export default function App() {
   }, []);
 
   const installPWA = async () => {
-    if (!deferredPrompt) {
-      // Silent fail if no prompt saved (iOS or already installed)
-      console.log("PWA install prompt not available");
+    // If we are in an iframe, we can't show the install prompt
+    if (window.self !== window.top) {
+      window.open(window.location.href, '_blank');
       return;
     }
+
+    // Check if it's iOS
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+    
+    if (isIOS) {
+      setShowIosHint(true);
+      setTimeout(() => setShowIosHint(false), 8000);
+      return;
+    }
+
+    if (!deferredPrompt) {
+      // If no prompt saved, it might already be handled by browser or not supported
+      console.log("PWA install prompt not available");
+      // Try to re-trigger or wait
+      return;
+    }
+
     deferredPrompt.prompt();
     const { outcome } = await deferredPrompt.userChoice;
     if (outcome === 'accepted') {
@@ -1010,6 +1039,33 @@ export default function App() {
       <AnimatePresence>
         {showIdleVideo && (
           <IdleVideoOverlay onDismiss={() => setShowIdleVideo(false)} />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showIosHint && (
+          <motion.div 
+            initial={{ opacity: 0, y: 50 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 50 }}
+            className="fixed bottom-24 left-1/2 -translate-x-1/2 w-[90%] max-w-sm z-[1000] pointer-events-none"
+          >
+            <div className="bg-orange-600 text-white p-4 rounded-2xl shadow-2xl flex flex-col items-center gap-2 text-center border-2 border-white/20">
+              <Apple size={32} className="mb-1" />
+              <p className="font-bold font-cairo text-sm">لتثبيت البوت على الايفون:</p>
+              <div className="flex flex-col gap-1 text-[12px] font-cairo opacity-90">
+                <p>1. اضغط على زر المشاركة <span className="inline-block px-2 py-0.5 bg-white/20 rounded">Share</span> بالأسفل</p>
+                <p>2. اختر "إضافة إلى الشاشة الرئيسية" <span className="inline-block px-2 py-0.5 bg-white/20 rounded italic text-white font-bold">Add to Home Screen</span></p>
+              </div>
+              <motion.div 
+                animate={{ y: [0, 10, 0] }}
+                transition={{ duration: 1, repeat: Infinity }}
+                className="mt-2"
+              >
+                <ExternalLink size={24} className="rotate-180" />
+              </motion.div>
+            </div>
+          </motion.div>
         )}
       </AnimatePresence>
 
