@@ -21,7 +21,10 @@ import {
   ExternalLink,
   Key,
   X,
-  Send
+  Send,
+  Monitor,
+  Smartphone,
+  Apple
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { AudioHandler } from './utils/audio';
@@ -293,6 +296,49 @@ export default function App() {
   const [userApiKey, setUserApiKey] = useState<string>(localStorage.getItem('gemini_user_api_key') || '');
   const [showKeyModal, setShowKeyModal] = useState(false);
   const [chatInput, setChatInput] = useState('');
+  
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isStandalone, setIsStandalone] = useState(false);
+
+  useEffect(() => {
+    // Check if app is running in standalone mode
+    const checkStandalone = () => {
+      const isStandaloneMode = window.matchMedia('(display-mode: standalone)').matches 
+        || (window.navigator as any).standalone 
+        || document.referrer.includes('android-app://');
+      setIsStandalone(isStandaloneMode);
+    };
+
+    checkStandalone();
+
+    const handleBeforeInstallPrompt = (e: any) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    window.addEventListener('appinstalled', () => {
+      setIsStandalone(true);
+      setDeferredPrompt(null);
+    });
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
+  }, []);
+
+  const installPWA = async () => {
+    if (!deferredPrompt) {
+      // Silent fail if no prompt saved (iOS or already installed)
+      console.log("PWA install prompt not available");
+      return;
+    }
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setDeferredPrompt(null);
+    }
+  };
   
   const audioHandlerRef = useRef<AudioHandler | null>(null);
   const sessionRef = useRef<any>(null);
@@ -1344,8 +1390,38 @@ export default function App() {
               <div className="mt-2 text-center">
                 <p className="text-[10px] text-white/20 font-medium tracking-widest uppercase">Developed by Ibrahim Elkhooly</p>
               </div>
+
+              {/* PWA Install Buttons */}
+              {!isStandalone && (
+                <motion.div 
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="flex flex-col items-center gap-3 pt-6 border-t border-white/5 w-full"
+                >
+                  <p className="text-[10px] text-orange-500/60 font-bold font-cairo uppercase tracking-widest">تثبيت البوت على جهازك</p>
+                  <div className="flex justify-center gap-4 w-full">
+                    <InstallButton 
+                      icon={<Smartphone size={18} />} 
+                      label="Android" 
+                      onClick={installPWA}
+                    />
+                    <InstallButton 
+                      icon={<Apple size={18} />} 
+                      label="iPhone" 
+                      onClick={installPWA}
+                    />
+                    <InstallButton 
+                      icon={<Monitor size={18} />} 
+                      label="Windows" 
+                      onClick={installPWA}
+                    />
+                  </div>
+                  <p className="text-[8px] text-white/20 font-cairo">سيظهر البوت كأيقونة على شاشة جهازك للاستخدام السريع</p>
+                </motion.div>
+              )}
             </div>
           </div>
+
         </main>
       </div>
 
@@ -1727,6 +1803,20 @@ function BottomNavIcon({ icon, label, active, onClick }: { icon: React.ReactNode
     >
       {icon}
       <span className="text-[8px] font-bold font-cairo">{label}</span>
+    </button>
+  );
+}
+
+function InstallButton({ icon, label, onClick }: { icon: React.ReactNode, label: string, onClick: () => void }) {
+  return (
+    <button 
+      onClick={onClick}
+      className="flex-1 flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 p-3 rounded-2xl transition-all active:scale-95 group"
+    >
+      <div className="text-white/40 group-hover:text-orange-500 transition-colors">
+        {icon}
+      </div>
+      <span className="text-[10px] font-bold text-white/60 group-hover:text-white font-cairo text-right">{label}</span>
     </button>
   );
 }
