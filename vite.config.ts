@@ -17,18 +17,23 @@ export default defineConfig(({ mode }) => {
           maximumFileSizeToCacheInBytes: 5 * 1024 * 1024 // 5MB
         },
         manifest: {
-          name: 'college AI Bot',
-          short_name: 'collegebot',
-          description: 'AI Bot by Ibrahim Elkhooly',
+          name: 'college ai bot',
+          short_name: 'college ai bot',
+          description: 'Assistant AI Bot by Ibrahim Elkhooly',
           theme_color: '#f97316',
           background_color: '#000000',
           display: 'standalone',
           icons: [
             {
-              src: 'icon.svg',
-              sizes: 'any',
-              type: 'image/svg+xml',
+              src: 'https://i.top4top.io/p_3757qb3cg0.png',
+              sizes: '512x512',
+              type: 'image/png',
               purpose: 'any maskable'
+            },
+            {
+              src: 'https://i.top4top.io/p_3757qb3cg0.png',
+              sizes: '192x192',
+              type: 'image/png'
             }
           ]
         }

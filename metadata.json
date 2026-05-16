@@ -1,6 +1,6 @@
 {
-  "name": "SPE KFS AI",
-  "description": "مساعد صوتي ذكي لطلاب وزوار كلية التربية النوعية بجامعة كفر الشيخ، مدعوم بتقنية Gemini Live API.",
+  "name": "college ai bot",
+  "description": "Assistant AI Bot by Ibrahim Elkhooly",
   "requestFramePermissions": [
     "microphone"
   ]
