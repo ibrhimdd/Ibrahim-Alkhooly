@@ -17,8 +17,8 @@ export default defineConfig(({ mode }) => {
           maximumFileSizeToCacheInBytes: 5 * 1024 * 1024 // 5MB
         },
         manifest: {
-          name: 'Ibrahim AI Bot',
-          short_name: 'IbrahimBot',
+          name: 'college AI Bot',
+          short_name: 'collegebot',
           description: 'AI Bot by Ibrahim Elkhooly',
           theme_color: '#f97316',
           background_color: '#000000',
